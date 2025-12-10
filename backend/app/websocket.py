@@ -20,7 +20,8 @@ class ConnectionManager:
     
     def disconnect(self, crawl_id: str, websocket: WebSocket):
         if crawl_id in self.active_connections:
-            self.active_connections[crawl_id].remove(websocket)
+            if websocket in self.active_connections[crawl_id]:
+                self.active_connections[crawl_id].remove(websocket)
             if not self.active_connections[crawl_id]:
                 del self.active_connections[crawl_id]
         logger.info(f"Client disconnected from crawl {crawl_id}")
@@ -29,13 +30,24 @@ class ConnectionManager:
         """Envoyer un message à tous les clients d'un crawl"""
         if crawl_id in self.active_connections:
             disconnected = []
-            for connection in self.active_connections[crawl_id]:
+            # logger.debug(f"Broadcasting to {len(self.active_connections[crawl_id])} clients")
+            
+            for connection in list(self.active_connections[crawl_id]):
                 try:
                     await connection.send_json(message)
                 except Exception as e:
-                    logger.error(f"Error sending message: {e}")
+                    logger.error(f"Error sending message to crawl {crawl_id}: {e}")
                     disconnected.append(connection)
             
             # Cleanup des connexions mortes
             for conn in disconnected:
                 self.disconnect(crawl_id, conn)
+
+    # ✅ AJOUT : Méthode de compatibilité pour main.py
+    async def send_personal_message(self, message: dict, crawl_id: str):
+        """
+        Cette méthode est appelée par main.py.
+        Elle redirige simplement vers broadcast pour prévenir tous les onglets ouverts.
+        Note l'inversion des arguments (message, crawl_id) vs (crawl_id, message)
+        """
+        await self.broadcast(crawl_id, message)

@@ -96,6 +96,8 @@ class WebCrawler:
             headers=self.headers
             ) as session:
             while self._has_urls() and self.pages_crawled < self.max_pages:
+                queue_len = len(self.to_visit)
+                logger.debug(f"Queue size for {self.crawl_id}: {queue_len}")
                 url, depth = self._get_next_url()
                 
                 if url in self.visited_urls:
@@ -118,6 +120,7 @@ class WebCrawler:
             self.to_visit.append((url, depth))
         else:
             self.to_visit.insert(0, (url, depth))
+        logger.debug(f"Enqueued {url} (depth: {depth}) for crawl {self.crawl_id}. Queue len: {len(self.to_visit)}")
     
     def _has_urls(self) -> bool:
         return len(self.to_visit) > 0
@@ -226,6 +229,7 @@ class WebCrawler:
                 continue
             
             if not self._should_crawl(absolute_url, current_domain):
+                logger.debug(f"Skipping by mode/filters: {absolute_url} (from {current_url})")
                 continue
 
             # 4. ✅ Résoudre l'URL finale si redirect connu
@@ -265,6 +269,7 @@ class WebCrawler:
                     "anchor": anchor_text[:50]
                 }
             })
+            logger.debug(f"Broadcasted link_created for {current_url} -> {absolute_url} (crawl {self.crawl_id})")
             
             if absolute_url not in self.visited_urls:
                 self._add_to_queue(absolute_url, current_depth + 1)
@@ -298,6 +303,16 @@ class WebCrawler:
                             r.was_redirected = true,
                             r.original_url = $target_url
                     """, source_url=source_url, final_target=final_target, target_url=target_url, crawl_id=self.crawl_id)
+
+                    # ✅ AJOUT : Prévenir le front de faire la mise à jour visuelle
+                    await self.manager.send_personal_message({
+                    "type": "redirect_corrected",
+                    "data": {
+                    "source": source_url,      # La page A
+                    "old_target": target_url, # Le redirect B (à supprimer)
+                    "new_target": final_target         # La vraie page C
+    }
+}, self.crawl_id)
                     
                     logger.info(f"Updated link: {source_url} → {target_url} → {final_target}")
     
@@ -327,19 +342,38 @@ class WebCrawler:
     
     async def _finalize_crawl(self):
         """Finaliser le crawl"""
+        
+        # ✅ Compter les placeholders
         with self.db.driver.session() as session:
+            stats = session.run("""
+                MATCH (p:Page)
+                RETURN 
+                    sum(CASE WHEN p.status_code > 0 THEN 1 ELSE 0 END) as pages_crawled,
+                    sum(CASE WHEN p.status_code = 0 THEN 1 ELSE 0 END) as pages_discovered
+            """).single()
+            
+            pages_crawled = stats["pages_crawled"]
+            pages_discovered = stats["pages_discovered"]
+            
             session.run("""
                 MATCH (c:Crawl {crawl_id: $crawl_id})
                 SET c.completed_at = datetime(),
                     c.status = 'completed',
                     c.pages_crawled = $pages_crawled,
+                    c.pages_discovered = $pages_discovered,
                     c.links_found = $links_found
-            """, crawl_id=self.crawl_id, pages_crawled=self.pages_crawled, links_found=self.links_found)
+            """, 
+            crawl_id=self.crawl_id, 
+            pages_crawled=pages_crawled,
+            pages_discovered=pages_discovered,
+            links_found=self.links_found
+            )
         
         await self.manager.broadcast(self.crawl_id, {
             "type": "crawl_complete",
             "data": {
-                "pages_crawled": self.pages_crawled,
+                "pages_crawled": pages_crawled,      # Pages vraiment visitées
+                "pages_discovered": pages_discovered, # Placeholders (pas encore crawlés)
                 "links_found": self.links_found
             }
         })
