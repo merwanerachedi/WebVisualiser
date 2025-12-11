@@ -24,7 +24,7 @@ interface Node {
 }
 
 interface Link {
-  source: string | Node // D3 remplace string par Node object
+  source: string | Node
   target: string | Node
 }
 
@@ -60,6 +60,11 @@ export default function WebVisualizer() {
   const [nodes, setNodes] = useState<Node[]>([])
   const [links, setLinks] = useState<Link[]>([])
   
+  // --- STATES POUR LE FOCUS MODE ---
+  const [hoverNode, setHoverNode] = useState<Node | null>(null)
+  const [highlightNodes, setHighlightNodes] = useState(new Set<string>())
+  const [highlightLinks, setHighlightLinks] = useState(new Set<Link>())
+
   const [stats, setStats] = useState({ discovered: 0, crawled: 0, links: 0 })
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 })
 
@@ -73,6 +78,37 @@ export default function WebVisualizer() {
 
   const wsRef = useRef<WebSocket | null>(null)
   const fgRef = useRef<any>(null)
+
+  // --- LOGIQUE DU FOCUS MODE ---
+  const updateHighlight = useCallback(() => {
+    setHighlightNodes(highlightNodes)
+    setHighlightLinks(highlightLinks)
+  }, [highlightNodes, highlightLinks])
+
+  const handleNodeHover = (node: Node | null) => {
+    setHoverNode(node || null)
+    
+    const newHighlightNodes = new Set<string>()
+    const newHighlightLinks = new Set<Link>()
+
+    if (node) {
+      newHighlightNodes.add(node.id)
+      links.forEach(link => {
+        // ForceGraph convertit les IDs en objets, on doit gérer les deux cas
+        const sourceId = typeof link.source === 'object' ? (link.source as any).id : link.source
+        const targetId = typeof link.target === 'object' ? (link.target as any).id : link.target
+
+        if (sourceId === node.id || targetId === node.id) {
+          newHighlightLinks.add(link)
+          newHighlightNodes.add(sourceId)
+          newHighlightNodes.add(targetId)
+        }
+      })
+    }
+
+    setHighlightNodes(newHighlightNodes)
+    setHighlightLinks(newHighlightLinks)
+  }
 
   const handleStartCrawl = useCallback(async () => {
     if (!url) return
@@ -130,15 +166,10 @@ export default function WebVisualizer() {
             setNodes((prev) => {
               const node = prev.find((n) => n.id === pageUrl)
               if (node) {
-                // ⚠️ CORRECTION CRITIQUE : Mutation directe au lieu de remplacement
-                // Cela préserve les liens existants qui pointent vers cet objet précis
                 node.status = "crawled"
                 node.title = title
-                // On retourne une copie du tableau (mais avec les MÊMES objets dedans)
-                // pour déclencher le rendu React sans casser D3
                 return [...prev] 
               }
-              // Nouveau noeud (rare ici, mais possible)
               return [...prev, { id: pageUrl, url: pageUrl, title, status: "crawled" }]
             })
             setStats((prev) => ({ ...prev, crawled: prev.crawled + 1 }))
@@ -152,21 +183,14 @@ export default function WebVisualizer() {
             setNodes((prev) => {
               const newNodes = []
               const sourceNode = prev.find((n) => n.id === source)
-              
-              if (!sourceNode) {
-                newNodes.push({ id: source, url: source, status: "discovered" as const })
-              }
+              if (!sourceNode) newNodes.push({ id: source, url: source, status: "discovered" as const })
               
               const targetExists = prev.find((n) => n.id === target)
               if (!targetExists) {
-                // On place le nouveau noeud près de son parent pour éviter l'éjection
-                // On vérifie que sourceNode.x existe bien (est un nombre)
                 const baseX = (sourceNode?.x !== undefined) ? sourceNode.x : 0
                 const baseY = (sourceNode?.y !== undefined) ? sourceNode.y : 0
-                
                 const spawnX = baseX + (Math.random() - 0.5) * 10
                 const spawnY = baseY + (Math.random() - 0.5) * 10
-                
                 newNodes.push({ id: target, url: target, status: "discovered" as const, x: spawnX, y: spawnY })
               }
 
@@ -178,7 +202,6 @@ export default function WebVisualizer() {
             })
 
             setLinks((prev) => {
-              // Vérification d'existence robuste (gère string ID ou objet Node)
               const linkExists = prev.find((l: any) => {
                  const sId = l.source.id || l.source
                  const tId = l.target.id || l.target
@@ -203,11 +226,9 @@ export default function WebVisualizer() {
             const source = normalizeUrl(message.data.source)
             const old_target = normalizeUrl(message.data.old_target)
             const new_target = normalizeUrl(message.data.new_target)
-            
             if (!source || !old_target || !new_target) return
 
             setNodes((prev) => {
-              // Pour la suppression, on filtre (crée un nouveau tableau), c'est ok
               const nodesWithoutRedirect = prev.filter(n => n.id !== old_target)
               const targetExists = nodesWithoutRedirect.find(n => n.id === new_target)
               if (!targetExists) {
@@ -259,6 +280,7 @@ export default function WebVisualizer() {
   const handleReset = useCallback(() => {
     handleStopCrawl()
     setNodes([]); setLinks([])
+    setHighlightNodes(new Set()); setHighlightLinks(new Set()); setHoverNode(null);
     setStats({ discovered: 0, crawled: 0, links: 0 })
     setUrl("")
   }, [handleStopCrawl])
@@ -283,31 +305,51 @@ export default function WebVisualizer() {
         height={dimensions.height}
         graphData={graphData}
         
-        // Physique
+        // --- INTERACTION ---
+        onNodeHover={handleNodeHover}
+        onNodeClick={(node) => window.open(node.id, '_blank')}
+        
+        // --- PHYSIQUE ---
         cooldownTicks={100}
-        d3VelocityDecay={0.3} // Friction modérée
+        d3VelocityDecay={0.3}
         d3AlphaDecay={0.02}
 
-        // Liens natifs (gris clair)
-        linkColor={() => "rgba(255, 255, 255, 0.2)"}
-        linkWidth={1}
-        linkDirectionalParticles={2}
+        // --- LIENS AVEC FOCUS MODE ---
+        linkColor={link => {
+            // Si un noeud est survolé et que ce lien n'est pas lié à lui, on assombrit
+            if (hoverNode && !highlightLinks.has(link)) {
+                return "rgba(255, 255, 255, 0.05)"
+            }
+            return "rgba(255, 255, 255, 0.2)"
+        }}
+        linkWidth={link => highlightLinks.has(link) ? 2 : 1} // Plus épais si focus
+        linkDirectionalParticles={hoverNode ? 0 : 2} // On coupe les particules en focus mode pour la clarté
         linkDirectionalParticleWidth={2}
         linkDirectionalParticleSpeed={0.005}
 
-        // Dessin des noeuds (Gris uniforme)
+        // --- DESSIN DES NOEUDS AVEC FOCUS MODE ---
         nodeCanvasObject={(node: any, ctx, globalScale) => {
           if (!Number.isFinite(node.x) || !Number.isFinite(node.y)) return;
 
-          const r = 4 // Taille fixe
+          // 🔦 FOCUS MODE : Calcul de l'opacité
+          // Si on survole un noeud, et que le noeud actuel n'est ni le survolé ni un voisin -> transparent
+          const isDimmed = hoverNode && !highlightNodes.has(node.id)
+          const globalAlpha = isDimmed ? 0.1 : 1
+
+          ctx.save() // On sauvegarde le contexte pour appliquer l'alpha
+          ctx.globalAlpha = globalAlpha
+
+          const r = 4
           const fontSize = 12 / globalScale
-          const fillStyle = "#94a3b8" // Slate 400 (Gris) pour tout le monde
+          
+          const isCrawled = node.status === "crawled"
+          const fillStyle = isCrawled ? "#4ade80" : "#94a3b8"
           
           try {
-            // Glow blanc léger
+            // Glow
             const glowSize = 12
             const gradient = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, glowSize)
-            gradient.addColorStop(0, "rgba(255, 255, 255, 0.2)")
+            gradient.addColorStop(0, isCrawled ? "rgba(74, 222, 128, 0.6)" : "rgba(148, 163, 184, 0.4)")
             gradient.addColorStop(1, "rgba(0, 0, 0, 0)")
             
             ctx.beginPath()
@@ -315,26 +357,34 @@ export default function WebVisualizer() {
             ctx.arc(node.x, node.y, glowSize, 0, 2 * Math.PI)
             ctx.fill()
   
-            // Cercle solide
+            // Centre solide
             ctx.beginPath()
             ctx.fillStyle = fillStyle
             ctx.arc(node.x, node.y, r, 0, 2 * Math.PI)
             ctx.fill()
             
-            // Labels
-            if (globalScale > 1.2 || node.id === normalizeUrl(url)) {
-               const label = node.title ? (node.title.length > 20 ? node.title.substring(0, 20) + '...' : node.title) : node.id
+            // LABEL LOGIC
+            // Affiche si : 1. C'est la racine OU 2. C'est le noeud survolé
+            if (node.id === normalizeUrl(url) || node === hoverNode) {
+               const label = node.title ? (node.title.length > 30 ? node.title.substring(0, 30) + '...' : node.title) : node.id
                ctx.font = `${fontSize}px Sans-Serif`
                ctx.textAlign = 'center'
                ctx.textBaseline = 'middle'
-               ctx.fillStyle = 'rgba(255, 255, 255, 0.8)'
+               ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'
+               // Petit fond noir sous le texte pour lisibilité
+               const textWidth = ctx.measureText(label).width;
+               ctx.fillStyle = "rgba(0,0,0,0.6)";
+               ctx.fillRect(node.x - textWidth / 2 - 2, node.y + glowSize - 6, textWidth + 4, fontSize + 4);
+               
+               ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'
                ctx.fillText(label, node.x, node.y + glowSize + 2)
             }
           } catch (e) {}
+
+          ctx.restore() // On restaure l'opacité pour le prochain noeud
         }}
         
-        onNodeClick={(node) => window.open(node.id, '_blank')}
-        nodeLabel="id"
+        nodeLabel="" // On désactive le tooltip par défaut car on a notre label custom
         backgroundColor="#000000"
       />
 
