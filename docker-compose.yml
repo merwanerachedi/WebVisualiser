@@ -21,8 +21,58 @@ services:
       timeout: 5s
       retries: 5
 
+  # Redis 
+  redis:
+    image: redis:7-alpine
+    container_name: crawler-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
+  #FastAPI
+  backend:
+    build: ./backend
+    container_name: crawler-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=password123
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      neo4j:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # React (Next.js)
+  frontend:
+      build: ./frontend
+      container_name: crawler-frontend
+      ports:
+        - "3000:3000"  # CHANGÉ : Next.js utilise le port 3000 par défaut
+      environment:
+        # CHANGÉ : Next.js nécessite le préfixe 'NEXT_PUBLIC_' pour être visible côté navigateur
+        - NEXT_PUBLIC_API_URL=http://localhost:8000
+        - NEXT_PUBLIC_WS_URL=ws://localhost:8000
+      volumes:
+        - ./frontend:/app
+        - /app/node_modules # CRUCIAL : Garde les dépendances Linux du conteneur
+      # CHANGÉ : On retire "-- --host" qui est une syntaxe Vite.
+      # Next.js écoute souvent sur 0.0.0.0 par défaut dans Docker, sinon "pnpm run dev" suffit
+      command: pnpm run dev
 
 volumes:
   neo4j_data:
   neo4j_logs:
+  redis_data:

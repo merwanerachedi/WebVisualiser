@@ -6,18 +6,22 @@ RUN npm install -g pnpm
 # Définir le répertoire de travail
 WORKDIR /app
 
-# Copier package.json et package-lock.json
-COPY package*.json ./
-COPY pnpm-lock.yaml ./
+# 1. COPIE OPTIMISÉE : On copie d'abord les fichiers de dépendances
+# Cela permet à Docker de mettre en cache l'installation si ces fichiers ne changent pas
+COPY package.json pnpm-lock.yaml ./
 
-# Installer les dépendances
+# 2. INSTALLATION
 RUN pnpm install
 
-# Copier le reste du code
+# 3. COPIE DU CODE SOURCE
 COPY . .
 
-# Exposer le port
-EXPOSE 5173
+# 4. PORT CORRECT
+# Next.js utilise le port 3000 par défaut. 
+# (5173 est pour Vite/React pur, mais ici vous avez next-env.d.ts)
+EXPOSE 3000
 
-# Commande de démarrage (dev mode)
-CMD ["npm","pnpm", "run", "dev", "--", "--host", "0.0.0.0"]
+# 5. COMMANDE DE DÉMARRAGE CORRIGÉE
+# Votre ancienne commande ["npm", "pnpm"...] était incorrecte.
+# On lance directement pnpm.
+CMD ["pnpm", "run", "dev"]
