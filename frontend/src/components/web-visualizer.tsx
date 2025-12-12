@@ -14,6 +14,89 @@ const normalizeUrl = (url: string | undefined) => {
   return url.endsWith("/") ? url.slice(0, -1) : url
 }
 
+// --- COMPOSANT STARFIELD (FOND ÉTOILÉ) ---
+const Starfield = () => {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext("2d")
+    if (!ctx) return
+
+    let width = window.innerWidth
+    let height = window.innerHeight
+    
+    const resize = () => {
+      width = window.innerWidth
+      height = window.innerHeight
+      canvas.width = width
+      canvas.height = height
+    }
+    window.addEventListener("resize", resize)
+    resize()
+
+    // Configuration des étoiles
+    const stars = Array.from({ length: 200 }).map(() => ({
+      x: Math.random() * width,
+      y: Math.random() * height,
+      size: Math.random() * 2,
+      speed: Math.random() * 0.5 + 0.1,
+      opacity: Math.random()
+    }))
+
+    // Suivi de la souris pour l'effet parallaxe
+    let mouseX = 0
+    let mouseY = 0
+    const handleMouseMove = (e: MouseEvent) => {
+      mouseX = (e.clientX - width / 2) * 0.05 // Facteur de mouvement faible
+      mouseY = (e.clientY - height / 2) * 0.05
+    }
+    window.addEventListener("mousemove", handleMouseMove)
+
+    // Boucle d'animation
+    let animationFrameId: number
+    const animate = () => {
+      ctx.clearRect(0, 0, width, height)
+      
+      // Fond noir profond mais pas total pour laisser voir le gradient CSS si besoin
+      ctx.fillStyle = "rgba(10, 10, 10, 1)" 
+      ctx.fillRect(0, 0, width, height)
+
+      stars.forEach(star => {
+        // Mouvement naturel vers le haut
+        star.y -= star.speed
+        if (star.y < 0) {
+          star.y = height
+          star.x = Math.random() * width
+        }
+
+        // Application du parallaxe (décalage selon la souris)
+        // Les plus grosses étoiles bougent plus vite (effet de profondeur)
+        const parallaxX = mouseX * star.size
+        const parallaxY = mouseY * star.size
+
+        ctx.beginPath()
+        ctx.fillStyle = `rgba(255, 255, 255, ${star.opacity})`
+        ctx.arc(star.x + parallaxX, star.y + parallaxY, star.size, 0, Math.PI * 2)
+        ctx.fill()
+      })
+
+      animationFrameId = requestAnimationFrame(animate)
+    }
+    animate()
+
+    return () => {
+      window.removeEventListener("resize", resize)
+      window.removeEventListener("mousemove", handleMouseMove)
+      cancelAnimationFrame(animationFrameId)
+    }
+  }, [])
+
+  return <canvas ref={canvasRef} className="absolute inset-0 z-0 pointer-events-none" />
+}
+
+// --- TYPES ---
 interface Node {
   id: string
   url: string
@@ -60,7 +143,7 @@ export default function WebVisualizer() {
   const [nodes, setNodes] = useState<Node[]>([])
   const [links, setLinks] = useState<Link[]>([])
   
-  // --- STATES POUR LE FOCUS MODE ---
+  // STATES FOCUS MODE
   const [hoverNode, setHoverNode] = useState<Node | null>(null)
   const [highlightNodes, setHighlightNodes] = useState(new Set<string>())
   const [highlightLinks, setHighlightLinks] = useState(new Set<Link>())
@@ -79,25 +162,16 @@ export default function WebVisualizer() {
   const wsRef = useRef<WebSocket | null>(null)
   const fgRef = useRef<any>(null)
 
-  // --- LOGIQUE DU FOCUS MODE ---
-  const updateHighlight = useCallback(() => {
-    setHighlightNodes(highlightNodes)
-    setHighlightLinks(highlightLinks)
-  }, [highlightNodes, highlightLinks])
-
   const handleNodeHover = (node: Node | null) => {
     setHoverNode(node || null)
-    
     const newHighlightNodes = new Set<string>()
     const newHighlightLinks = new Set<Link>()
 
     if (node) {
       newHighlightNodes.add(node.id)
       links.forEach(link => {
-        // ForceGraph convertit les IDs en objets, on doit gérer les deux cas
         const sourceId = typeof link.source === 'object' ? (link.source as any).id : link.source
         const targetId = typeof link.target === 'object' ? (link.target as any).id : link.target
-
         if (sourceId === node.id || targetId === node.id) {
           newHighlightLinks.add(link)
           newHighlightNodes.add(sourceId)
@@ -105,14 +179,12 @@ export default function WebVisualizer() {
         }
       })
     }
-
     setHighlightNodes(newHighlightNodes)
     setHighlightLinks(newHighlightLinks)
   }
 
   const handleStartCrawl = useCallback(async () => {
     if (!url) return
-
     const cleanSeedUrl = normalizeUrl(url)
 
     try {
@@ -120,37 +192,19 @@ export default function WebVisualizer() {
       const resp = await fetch("http://localhost:8000/api/crawl", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url,
-          max_depth: config.max_depth,
-          max_pages: config.max_pages,
-          crawl_mode: config.crawl_mode,
-          algorithm: config.algorithm,
-        }),
+        body: JSON.stringify({ url, ...config }),
       })
 
-      if (!resp.ok) {
-        const text = await resp.text()
-        throw new Error(`Failed to create crawl: ${resp.status} ${text}`)
-      }
-
+      if (!resp.ok) throw new Error(`Failed: ${resp.status}`)
       const data = await resp.json()
       const crawlId = data.crawl_id
       
       const ws = new WebSocket(`ws://localhost:8000/ws/${crawlId}`)
 
       ws.onopen = () => {
-        console.log("✅ WebSocket open for crawl", crawlId)
         setIsConnected(true)
         setIsCrawling(true)
-
-        setNodes([{ 
-          id: cleanSeedUrl, 
-          url: cleanSeedUrl, 
-          status: "discovered",
-          x: 0, 
-          y: 0
-        }])
+        setNodes([{ id: cleanSeedUrl, url: cleanSeedUrl, status: "discovered", x: 0, y: 0 }])
         setLinks([])
         setStats({ discovered: 1, crawled: 0, links: 0 })
       }
@@ -161,23 +215,20 @@ export default function WebVisualizer() {
 
           if (message.type === "page_discovered") {
             const pageUrl = normalizeUrl(message.data.url)
-            const { title } = message.data
-            
             setNodes((prev) => {
               const node = prev.find((n) => n.id === pageUrl)
               if (node) {
                 node.status = "crawled"
-                node.title = title
+                node.title = message.data.title
                 return [...prev] 
               }
-              return [...prev, { id: pageUrl, url: pageUrl, title, status: "crawled" }]
+              return [...prev, { id: pageUrl, url: pageUrl, title: message.data.title, status: "crawled" }]
             })
             setStats((prev) => ({ ...prev, crawled: prev.crawled + 1 }))
             
           } else if (message.type === "link_created") {
             const source = normalizeUrl(message.data.source)
             const target = normalizeUrl(message.data.target)
-            
             if (!source || !target || source === target) return
 
             setNodes((prev) => {
@@ -193,7 +244,6 @@ export default function WebVisualizer() {
                 const spawnY = baseY + (Math.random() - 0.5) * 10
                 newNodes.push({ id: target, url: target, status: "discovered" as const, x: spawnX, y: spawnY })
               }
-
               if (newNodes.length > 0) {
                 setStats((s) => ({ ...s, discovered: s.discovered + newNodes.length }))
                 return [...prev, ...newNodes]
@@ -215,28 +265,20 @@ export default function WebVisualizer() {
             })
           } 
           else if (message.type === "crawl_completed") {
-            console.log("🏁 Fin du crawl reçue.")
-            setIsCrawling(false)
-            setIsConnected(false)
-            ws.close()
-            wsRef.current = null
+            setIsCrawling(false); setIsConnected(false); ws.close(); wsRef.current = null
             if (fgRef.current) fgRef.current.zoomToFit(1000, 50)
           }
           else if (message.type === "redirect_corrected") {
-            const source = normalizeUrl(message.data.source)
-            const old_target = normalizeUrl(message.data.old_target)
-            const new_target = normalizeUrl(message.data.new_target)
-            if (!source || !old_target || !new_target) return
+            const { source, old_target, new_target } = message.data
+            const s = normalizeUrl(source), ot = normalizeUrl(old_target), nt = normalizeUrl(new_target)
+            if (!s || !ot || !nt) return
 
             setNodes((prev) => {
-              const nodesWithoutRedirect = prev.filter(n => n.id !== old_target)
-              const targetExists = nodesWithoutRedirect.find(n => n.id === new_target)
+              const nodesWithoutRedirect = prev.filter(n => n.id !== ot)
+              const targetExists = nodesWithoutRedirect.find(n => n.id === nt)
               if (!targetExists) {
-                 const oldNode = prev.find(n => n.id === old_target)
-                 return [...nodesWithoutRedirect, { 
-                   id: new_target, url: new_target, status: "discovered", 
-                   x: oldNode?.x || 0, y: oldNode?.y || 0 
-                 }]
+                 const oldNode = prev.find(n => n.id === ot)
+                 return [...nodesWithoutRedirect, { id: nt, url: nt, status: "discovered", x: oldNode?.x||0, y: oldNode?.y||0 }]
               }
               return nodesWithoutRedirect
             })
@@ -245,27 +287,23 @@ export default function WebVisualizer() {
               const cleanLinks = prev.filter((l: any) => {
                 const sId = l.source.id || l.source
                 const tId = l.target.id || l.target
-                return sId !== old_target && tId !== old_target
+                return sId !== ot && tId !== ot
               })
               const exists = cleanLinks.find((l: any) => {
                 const sId = l.source.id || l.source
                 const tId = l.target.id || l.target
-                return sId === source && tId === new_target
+                return sId === s && tId === nt
               })
-              if (!exists) return [...cleanLinks, { source, target: new_target }]
+              if (!exists) return [...cleanLinks, { source: s, target: nt }]
               return cleanLinks
             })
           }
-        } catch (error) { console.error("❌ Error handling WS message:", error) }
+        } catch (error) { console.error(error) }
       }
-
       ws.onerror = () => { setIsConnected(false); setIsCrawling(false) }
       ws.onclose = () => { setIsConnected(false); setIsCrawling(false) }
       wsRef.current = ws
-    } catch (err) {
-      console.error("Error starting crawl:", err)
-      setIsCrawling(false); setIsConnected(false)
-    }
+    } catch (err) { setIsCrawling(false); setIsConnected(false) }
   }, [url, config])
 
   const handleStopCrawl = useCallback(() => {
@@ -279,10 +317,8 @@ export default function WebVisualizer() {
 
   const handleReset = useCallback(() => {
     handleStopCrawl()
-    setNodes([]); setLinks([])
-    setHighlightNodes(new Set()); setHighlightLinks(new Set()); setHoverNode(null);
-    setStats({ discovered: 0, crawled: 0, links: 0 })
-    setUrl("")
+    setNodes([]); setLinks([]); setHighlightNodes(new Set()); setHighlightLinks(new Set()); setHoverNode(null);
+    setStats({ discovered: 0, crawled: 0, links: 0 }); setUrl("")
   }, [handleStopCrawl])
 
   useEffect(() => { return () => { if (wsRef.current) wsRef.current.close() } }, [])
@@ -299,97 +335,92 @@ export default function WebVisualizer() {
   return (
     <div className="relative h-screen w-full bg-black overflow-hidden">
       
-      <ForceGraph2D
-        ref={fgRef}
-        width={dimensions.width}
-        height={dimensions.height}
-        graphData={graphData}
-        
-        // --- INTERACTION ---
-        onNodeHover={handleNodeHover}
-        onNodeClick={(node) => window.open(node.id, '_blank')}
-        
-        // --- PHYSIQUE ---
-        cooldownTicks={100}
-        d3VelocityDecay={0.3}
-        d3AlphaDecay={0.02}
+      {/* 1. LAYER FOND : ÉTOILES */}
+      <Starfield />
 
-        // --- LIENS AVEC FOCUS MODE ---
-        linkColor={link => {
-            // Si un noeud est survolé et que ce lien n'est pas lié à lui, on assombrit
-            if (hoverNode && !highlightLinks.has(link)) {
-                return "rgba(255, 255, 255, 0.05)"
-            }
-            return "rgba(255, 255, 255, 0.2)"
-        }}
-        linkWidth={link => highlightLinks.has(link) ? 2 : 1} // Plus épais si focus
-        linkDirectionalParticles={hoverNode ? 0 : 2} // On coupe les particules en focus mode pour la clarté
-        linkDirectionalParticleWidth={2}
-        linkDirectionalParticleSpeed={0.005}
-
-        // --- DESSIN DES NOEUDS AVEC FOCUS MODE ---
-        nodeCanvasObject={(node: any, ctx, globalScale) => {
-          if (!Number.isFinite(node.x) || !Number.isFinite(node.y)) return;
-
-          // 🔦 FOCUS MODE : Calcul de l'opacité
-          // Si on survole un noeud, et que le noeud actuel n'est ni le survolé ni un voisin -> transparent
-          const isDimmed = hoverNode && !highlightNodes.has(node.id)
-          const globalAlpha = isDimmed ? 0.1 : 1
-
-          ctx.save() // On sauvegarde le contexte pour appliquer l'alpha
-          ctx.globalAlpha = globalAlpha
-
-          const r = 4
-          const fontSize = 12 / globalScale
+      {/* 2. LAYER GRAPHE : TRANSPARENT */}
+      <div className="absolute inset-0 z-10">
+        <ForceGraph2D
+          ref={fgRef}
+          width={dimensions.width}
+          height={dimensions.height}
+          graphData={graphData}
           
-          const isCrawled = node.status === "crawled"
-          const fillStyle = isCrawled ? "#4ade80" : "#94a3b8"
+          // Interactions
+          onNodeHover={handleNodeHover}
+          onNodeClick={(node) => window.open(node.id, '_blank')}
           
-          try {
-            // Glow
-            const glowSize = 12
-            const gradient = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, glowSize)
-            gradient.addColorStop(0, isCrawled ? "rgba(74, 222, 128, 0.6)" : "rgba(148, 163, 184, 0.4)")
-            gradient.addColorStop(1, "rgba(0, 0, 0, 0)")
-            
-            ctx.beginPath()
-            ctx.fillStyle = gradient
-            ctx.arc(node.x, node.y, glowSize, 0, 2 * Math.PI)
-            ctx.fill()
-  
-            // Centre solide
-            ctx.beginPath()
-            ctx.fillStyle = fillStyle
-            ctx.arc(node.x, node.y, r, 0, 2 * Math.PI)
-            ctx.fill()
-            
-            // LABEL LOGIC
-            // Affiche si : 1. C'est la racine OU 2. C'est le noeud survolé
-            if (node.id === normalizeUrl(url) || node === hoverNode) {
-               const label = node.title ? (node.title.length > 30 ? node.title.substring(0, 30) + '...' : node.title) : node.id
-               ctx.font = `${fontSize}px Sans-Serif`
-               ctx.textAlign = 'center'
-               ctx.textBaseline = 'middle'
-               ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'
-               // Petit fond noir sous le texte pour lisibilité
-               const textWidth = ctx.measureText(label).width;
-               ctx.fillStyle = "rgba(0,0,0,0.6)";
-               ctx.fillRect(node.x - textWidth / 2 - 2, node.y + glowSize - 6, textWidth + 4, fontSize + 4);
-               
-               ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'
-               ctx.fillText(label, node.x, node.y + glowSize + 2)
-            }
-          } catch (e) {}
+          // Physique
+          cooldownTicks={100}
+          d3VelocityDecay={0.3}
+          d3AlphaDecay={0.02}
 
-          ctx.restore() // On restaure l'opacité pour le prochain noeud
-        }}
-        
-        nodeLabel="" // On désactive le tooltip par défaut car on a notre label custom
-        backgroundColor="#000000"
-      />
+          // Liens (Focus Mode)
+          linkColor={link => hoverNode && !highlightLinks.has(link) ? "rgba(255, 255, 255, 0.05)" : "rgba(255, 255, 255, 0.2)"}
+          linkWidth={link => highlightLinks.has(link) ? 2 : 1}
+          linkDirectionalParticles={hoverNode ? 0 : 2}
+          linkDirectionalParticleWidth={2}
+          linkDirectionalParticleSpeed={0.005}
 
-      {/* --- UI --- */}
-      <div className="absolute left-1/2 top-8 z-10 flex -translate-x-1/2 flex-col items-center gap-4 pointer-events-none">
+          // Noeuds (Focus Mode + Couleurs)
+          nodeCanvasObject={(node: any, ctx, globalScale) => {
+            if (!Number.isFinite(node.x) || !Number.isFinite(node.y)) return;
+
+            const isDimmed = hoverNode && !highlightNodes.has(node.id)
+            const globalAlpha = isDimmed ? 0.1 : 1
+
+            ctx.save()
+            ctx.globalAlpha = globalAlpha
+
+            const r = 4
+            const fontSize = 12 / globalScale
+            const isCrawled = node.status === "crawled"
+            const fillStyle = isCrawled ? "#4ade80" : "#94a3b8"
+            
+            try {
+              // Glow
+              const glowSize = 12
+              const gradient = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, glowSize)
+              gradient.addColorStop(0, isCrawled ? "rgba(74, 222, 128, 0.6)" : "rgba(148, 163, 184, 0.4)")
+              gradient.addColorStop(1, "rgba(0, 0, 0, 0)")
+              
+              ctx.beginPath()
+              ctx.fillStyle = gradient
+              ctx.arc(node.x, node.y, glowSize, 0, 2 * Math.PI)
+              ctx.fill()
+    
+              // Core
+              ctx.beginPath()
+              ctx.fillStyle = fillStyle
+              ctx.arc(node.x, node.y, r, 0, 2 * Math.PI)
+              ctx.fill()
+              
+              // Labels
+              if (node.id === normalizeUrl(url) || node === hoverNode) {
+                 const label = node.title ? (node.title.length > 30 ? node.title.substring(0, 30) + '...' : node.title) : node.id
+                 ctx.font = `${fontSize}px Sans-Serif`
+                 ctx.textAlign = 'center'
+                 ctx.textBaseline = 'middle'
+                 
+                 const textWidth = ctx.measureText(label).width;
+                 ctx.fillStyle = "rgba(0,0,0,0.6)";
+                 ctx.fillRect(node.x - textWidth / 2 - 2, node.y + glowSize - 6, textWidth + 4, fontSize + 4);
+
+                 ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'
+                 ctx.fillText(label, node.x, node.y + glowSize + 2)
+              }
+            } catch (e) {}
+
+            ctx.restore()
+          }}
+          
+          nodeLabel=""
+          backgroundColor="rgba(0,0,0,0)" // ⚠️ IMPORTANT : Fond transparent pour voir les étoiles
+        />
+      </div>
+
+      {/* 3. LAYER UI : AU DESSUS DE TOUT */}
+      <div className="absolute left-1/2 top-8 z-20 flex -translate-x-1/2 flex-col items-center gap-4 pointer-events-none">
         <h1 className="text-center font-mono text-4xl font-bold tracking-tight text-white drop-shadow-lg">
           Web Visualizer
         </h1>
@@ -402,54 +433,43 @@ export default function WebVisualizer() {
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               disabled={isCrawling}
-              className="w-96 rounded-lg border border-white/30 bg-white/10 px-4 py-2 font-mono text-sm text-white placeholder:text-white/50 focus:border-white focus:outline-none"
+              className="w-96 rounded-lg border border-white/30 bg-white/10 px-4 py-2 font-mono text-sm text-white focus:outline-none"
             />
             {!isCrawling ? (
-              <button
-                onClick={handleStartCrawl}
-                disabled={!url || isConnected}
-                className="flex items-center gap-2 rounded-lg bg-white px-4 py-2 font-medium text-black hover:bg-white/90 disabled:opacity-50"
-              >
+              <button onClick={handleStartCrawl} disabled={!url || isConnected} className="flex items-center gap-2 rounded-lg bg-white px-4 py-2 font-medium text-black hover:bg-white/90 disabled:opacity-50">
                 <Play className="h-4 w-4" /> Start
               </button>
             ) : (
-              <button
-                onClick={handleStopCrawl}
-                className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 font-medium text-white hover:bg-red-700"
-              >
+              <button onClick={handleStopCrawl} className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 font-medium text-white hover:bg-red-700">
                 <Pause className="h-4 w-4" /> Stop
               </button>
             )}
-            <button onClick={handleReset} className="rounded-lg border border-white/30 p-2 text-white hover:bg-white/10">
-              <RotateCcw className="h-4 w-4" />
-            </button>
-            <button onClick={() => setShowSettings(!showSettings)} className="rounded-lg border border-white/30 p-2 text-white hover:bg-white/10">
-              <Settings className="h-4 w-4" />
-            </button>
+            <button onClick={handleReset} className="rounded-lg border border-white/30 p-2 text-white hover:bg-white/10"><RotateCcw className="h-4 w-4" /></button>
+            <button onClick={() => setShowSettings(!showSettings)} className="rounded-lg border border-white/30 p-2 text-white hover:bg-white/10"><Settings className="h-4 w-4" /></button>
           </div>
           {showSettings && (
-            <div className="mt-4 space-y-3 border-t border-white/20 pt-4">
+             <div className="mt-4 space-y-3 border-t border-white/20 pt-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-white/70">Max Depth</label>
-                  <input type="number" min="1" max="10" value={config.max_depth} onChange={(e) => setConfig({ ...config, max_depth: Number.parseInt(e.target.value) || 1 })} className="w-full rounded-lg border border-white/30 bg-white/10 px-3 py-1.5 font-mono text-sm text-white" />
+                  <label className="text-xs text-white/70">Max Depth</label>
+                  <input type="number" min="1" value={config.max_depth} onChange={(e) => setConfig({ ...config, max_depth: +e.target.value })} className="w-full bg-white/10 text-white rounded px-2 py-1"/>
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-white/70">Max Pages</label>
-                  <input type="number" min="1" max="1000" value={config.max_pages} onChange={(e) => setConfig({ ...config, max_pages: Number.parseInt(e.target.value) || 1 })} className="w-full rounded-lg border border-white/30 bg-white/10 px-3 py-1.5 font-mono text-sm text-white" />
+                  <label className="text-xs text-white/70">Max Pages</label>
+                  <input type="number" min="1" value={config.max_pages} onChange={(e) => setConfig({ ...config, max_pages: +e.target.value })} className="w-full bg-white/10 text-white rounded px-2 py-1"/>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-white/70">Crawl Mode</label>
-                  <select value={config.crawl_mode} onChange={(e) => setConfig({ ...config, crawl_mode: e.target.value as any })} className="w-full rounded-lg border border-white/30 bg-white/10 px-3 py-1.5 font-mono text-sm text-white">
+                  <label className="text-xs text-white/70">Crawl Mode</label>
+                  <select value={config.crawl_mode} onChange={(e) => setConfig({ ...config, crawl_mode: e.target.value as any })} className="w-full bg-white/10 text-white rounded px-2 py-1">
                     <option value="INTERNAL">INTERNAL</option>
                     <option value="EXTERNAL">EXTERNAL</option>
                   </select>
                 </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-white/70">Algorithm</label>
-                  <select value={config.algorithm} onChange={(e) => setConfig({ ...config, algorithm: e.target.value as any })} className="w-full rounded-lg border border-white/30 bg-white/10 px-3 py-1.5 font-mono text-sm text-white">
+                 <div>
+                  <label className="text-xs text-white/70">Algorithm</label>
+                  <select value={config.algorithm} onChange={(e) => setConfig({ ...config, algorithm: e.target.value as any })} className="w-full bg-white/10 text-white rounded px-2 py-1">
                     <option value="BFS">BFS</option>
                     <option value="DFS">DFS</option>
                   </select>
@@ -460,12 +480,12 @@ export default function WebVisualizer() {
         </div>
       </div>
 
-      <div className="absolute right-8 top-8 z-10 pointer-events-none">
+      <div className="absolute right-8 top-8 z-20 pointer-events-none">
         <div className="rounded-xl border border-white/20 bg-black/80 p-4 backdrop-blur-sm pointer-events-auto">
-          <div className="space-y-2 font-mono text-sm">
-            <div className="flex justify-between gap-6"><span className="text-white/60">Discovered:</span><span className="font-bold text-white">{stats.discovered}</span></div>
-            <div className="flex justify-between gap-6"><span className="text-white/60">Crawled:</span><span className="font-bold text-white">{stats.crawled}</span></div>
-            <div className="flex justify-between gap-6"><span className="text-white/60">Links:</span><span className="font-bold text-white">{stats.links}</span></div>
+          <div className="space-y-2 font-mono text-sm text-white">
+            <div className="flex justify-between gap-6"><span>Discovered:</span><span className="font-bold">{stats.discovered}</span></div>
+            <div className="flex justify-between gap-6"><span>Crawled:</span><span className="font-bold">{stats.crawled}</span></div>
+            <div className="flex justify-between gap-6"><span>Links:</span><span className="font-bold">{stats.links}</span></div>
             <div className="mt-2 flex items-center gap-2 border-t border-white/20 pt-2">
               <div className={`h-2 w-2 rounded-full ${isConnected ? "animate-pulse bg-white" : "bg-white/30"}`} />
               <span className="text-xs text-white/60">{isConnected ? "Connected" : "Disconnected"}</span>
@@ -475,7 +495,7 @@ export default function WebVisualizer() {
       </div>
 
       {nodes.length === 0 && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
           <div className="text-center">
             <p className="text-lg text-white/70">Enter a URL to visualize the web</p>
           </div>
