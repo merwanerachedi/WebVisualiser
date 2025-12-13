@@ -399,6 +399,13 @@ export default function WebVisualizer() {
     setCrawlCompleted(false)
   }, [handleStopCrawl])
 
+  // Effet automatique : Si on vide la barre de recherche, on remet le graphe en vert
+  useEffect(() => {
+    if (searchQuery.trim() === "") {
+      setSearchScores({}) 
+    }
+  }, [searchQuery])
+
   useEffect(() => {
     return () => {
       if (wsRef.current) wsRef.current.close()
