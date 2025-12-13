@@ -109,3 +109,18 @@ async def get_crawl_graph(crawl_id: str):
     # ✅ AWAIT CALL
     graph = await db.get_crawl_graph(crawl_id)
     return graph
+
+
+@app.get("/api/search")             
+async def search_pages(q: str):     
+  
+    if not q:                       
+        return []
+    
+    try:
+        
+        results = await db.search_similar_pages(q, top_k=5)
+        return results               
+    except Exception as e:
+        logger.error(f"Search error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

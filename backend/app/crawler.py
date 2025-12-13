@@ -175,10 +175,24 @@ class WebCrawler:
                     title_tag = soup.find('title')
                     page_data.title = title_tag.string.strip() if title_tag else None
                     
+                    # EXTRACTION DU TEXTE PROPRE POUR L'IA
+                    # On vire les scripts et le style pour ne pas polluer l'IA
+                    for script in soup(["script", "style"]):
+                        script.decompose()
+                    
+                    # On récupère le texte visible
+                    text_content = soup.get_text(separator=' ', strip=True)
+                    
+                    # On coupe si c'est trop long (les modèles ont une limite, souvent 512 tokens)
+                    # On garde les 2000 premiers caractères pour l'instant, c'est souvent suffisant pour comprendre le sujet
+                    text_content_sample = text_content[:2000] 
+
                     data_dict = page_data.dict()
                     data_dict.pop('url', None)
-                    # ✅ AWAIT ajouté
-                    await self.db.create_or_update_page(final_url, data_dict)
+                    
+                    # ✅ 3. APPEL AVEC LE TEXTE
+                    await self.db.create_or_update_page(final_url, data_dict, text_content=text_content_sample)
+                    
                     self.pages_crawled += 1
                     
                     await self.manager.broadcast(self.crawl_id, {
