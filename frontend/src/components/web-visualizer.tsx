@@ -1,145 +1,18 @@
 "use client"
 
-import { useState, useEffect, useRef, useCallback, useMemo } from "react"
-import { Play, Pause, RotateCcw, Settings, Search } from "lucide-react"
-import dynamic from "next/dynamic"
-
-const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), {
-  ssr: false,
-  loading: () => <div className="text-white text-center pt-20">Loading Graph Engine...</div>,
-})
+import { useState, useEffect, useRef, useCallback } from "react"
+import { Starfield } from "./visualizer/starfield"
+import { CrawlControls } from "./visualizer/crawl-controls"
+import { SearchPanel } from "./visualizer/search-panel"
+import { SettingsPanel } from "./visualizer/settings-panel"
+import { StatsPanel } from "./visualizer/stats-panel"
+import { GraphCanvas } from "./visualizer/graph-canvas"
+import { DraggableWindow } from "./visualizer/draggable-window"
+import type { Node, Link, WebSocketMessage, CrawlConfig, SearchResult } from "./visualizer/types"
 
 const normalizeUrl = (url: string | undefined) => {
   if (!url) return ""
   return url.endsWith("/") ? url.slice(0, -1) : url
-}
-
-// --- COMPOSANT STARFIELD (FOND ÉTOILÉ) ---
-const Starfield = () => {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext("2d")
-    if (!ctx) return
-
-    let width = window.innerWidth
-    let height = window.innerHeight
-
-    const resize = () => {
-      width = window.innerWidth
-      height = window.innerHeight
-      canvas.width = width
-      canvas.height = height
-    }
-    window.addEventListener("resize", resize)
-    resize()
-
-    // Configuration des étoiles
-    const stars = Array.from({ length: 200 }).map(() => ({
-      x: Math.random() * width,
-      y: Math.random() * height,
-      size: Math.random() * 2,
-      speed: Math.random() * 0.5 + 0.1,
-      opacity: Math.random(),
-    }))
-
-    // Suivi de la souris pour l'effet parallaxe
-    let mouseX = 0
-    let mouseY = 0
-    const handleMouseMove = (e: MouseEvent) => {
-      mouseX = (e.clientX - width / 2) * 0.05 // Facteur de mouvement faible
-      mouseY = (e.clientY - height / 2) * 0.05
-    }
-    window.addEventListener("mousemove", handleMouseMove)
-
-    // Boucle d'animation
-    let animationFrameId: number
-    const animate = () => {
-      ctx.clearRect(0, 0, width, height)
-
-      // Fond noir profond mais pas total pour laisser voir le gradient CSS si besoin
-      ctx.fillStyle = "rgba(10, 10, 10, 1)"
-      ctx.fillRect(0, 0, width, height)
-
-      stars.forEach((star) => {
-        // Mouvement naturel vers le haut
-        star.y -= star.speed
-        if (star.y < 0) {
-          star.y = height
-          star.x = Math.random() * width
-        }
-
-        // Application du parallaxe (décalage selon la souris)
-        // Les plus grosses étoiles bougent plus vite (effet de profondeur)
-        const parallaxX = mouseX * star.size
-        const parallaxY = mouseY * star.size
-
-        ctx.beginPath()
-        ctx.fillStyle = `rgba(255, 255, 255, ${star.opacity})`
-        ctx.arc(star.x + parallaxX, star.y + parallaxY, star.size, 0, Math.PI * 2)
-        ctx.fill()
-      })
-
-      animationFrameId = requestAnimationFrame(animate)
-    }
-    animate()
-
-    return () => {
-      window.removeEventListener("resize", resize)
-      window.removeEventListener("mousemove", handleMouseMove)
-      cancelAnimationFrame(animationFrameId)
-    }
-  }, [])
-
-  return <canvas ref={canvasRef} className="absolute inset-0 z-0 pointer-events-none" />
-}
-
-// --- TYPES ---
-interface Node {
-  id: string
-  url: string
-  title?: string
-  status: "discovered" | "crawled"
-  // Score removed from here to avoid state mutation issues
-  x?: number
-  y?: number
-}
-
-interface Link {
-  source: string | Node
-  target: string | Node
-}
-
-interface WebSocketMessage {
-  type: "link_created" | "page_discovered" | "crawl_completed" | "redirect_corrected"
-  data: {
-    source?: string
-    target?: string
-    old_target?: string
-    new_target?: string
-    anchor?: string
-    url?: string
-    title?: string
-    status_code?: number
-    domain?: string
-    path?: string
-    crawl_id?: string
-  }
-}
-
-interface CrawlConfig {
-  max_depth: number
-  max_pages: number
-  crawl_mode: "INTERNAL" | "EXTERNAL"
-  algorithm: "BFS" | "DFS"
-}
-
-interface SearchResult {
-  url: string
-  score: number
-  title: string
 }
 
 export default function WebVisualizer() {
@@ -149,17 +22,14 @@ export default function WebVisualizer() {
 
   const [nodes, setNodes] = useState<Node[]>([])
   const [links, setLinks] = useState<Link[]>([])
-  
-  // ✅ NEW STATE: Store scores separately to avoid breaking graph references
   const [searchScores, setSearchScores] = useState<Record<string, number>>({})
 
-  // STATES FOCUS MODE
+  // Focus Mode States
   const [hoverNode, setHoverNode] = useState<Node | null>(null)
   const [highlightNodes, setHighlightNodes] = useState(new Set<string>())
   const [highlightLinks, setHighlightLinks] = useState(new Set<Link>())
 
   const [stats, setStats] = useState({ discovered: 0, crawled: 0, links: 0 })
-  const [dimensions, setDimensions] = useState({ width: 800, height: 600 })
 
   const [showSettings, setShowSettings] = useState(false)
   const [config, setConfig] = useState<CrawlConfig>({
@@ -207,23 +77,20 @@ export default function WebVisualizer() {
 
       const results: SearchResult[] = await response.json()
 
-      // ✅ FIXED: Update separate scores state instead of modifying nodes directly
       const newScores: Record<string, number> = {}
       results.forEach((r) => {
         newScores[normalizeUrl(r.url)] = r.score
       })
       setSearchScores(newScores)
 
-      // Optional: Zoom to best result
       if (results.length > 0 && fgRef.current) {
-         const bestId = normalizeUrl(results[0].url)
-         const node = nodes.find(n => n.id === bestId)
-         if (node && typeof node.x === 'number' && typeof node.y === 'number') {
-             fgRef.current.centerAt(node.x, node.y, 1000)
-             fgRef.current.zoom(3, 2000)
-         }
+        const bestId = normalizeUrl(results[0].url)
+        const node = nodes.find((n) => n.id === bestId)
+        if (node && typeof node.x === "number" && typeof node.y === "number") {
+          fgRef.current.centerAt(node.x, node.y, 1000)
+          fgRef.current.zoom(3, 2000)
+        }
       }
-
     } catch (error) {
       console.error("[v0] Search error:", error)
     } finally {
@@ -236,10 +103,9 @@ export default function WebVisualizer() {
     const cleanSeedUrl = normalizeUrl(url)
 
     setCrawlCompleted(false)
-    setSearchScores({}) // Reset scores on new crawl
+    setSearchScores({})
 
     try {
-      console.log("🚀 Starting crawl with URL:", url)
       const resp = await fetch("http://localhost:8000/api/crawl", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -389,7 +255,7 @@ export default function WebVisualizer() {
     handleStopCrawl()
     setNodes([])
     setLinks([])
-    setSearchScores({}) // Reset scores
+    setSearchScores({})
     setHighlightNodes(new Set())
     setHighlightLinks(new Set())
     setHoverNode(null)
@@ -399,10 +265,9 @@ export default function WebVisualizer() {
     setCrawlCompleted(false)
   }, [handleStopCrawl])
 
-  // Effet automatique : Si on vide la barre de recherche, on remet le graphe en vert
   useEffect(() => {
     if (searchQuery.trim() === "") {
-      setSearchScores({}) 
+      setSearchScores({})
     }
   }, [searchQuery])
 
@@ -412,304 +277,66 @@ export default function WebVisualizer() {
     }
   }, [])
 
-  useEffect(() => {
-    setDimensions({ width: window.innerWidth, height: window.innerHeight })
-    const handleResize = () => setDimensions({ width: window.innerWidth, height: window.innerHeight })
-    window.addEventListener("resize", handleResize)
-    return () => window.removeEventListener("resize", handleResize)
-  }, [])
-
-  const graphData = useMemo(() => ({ nodes, links }), [nodes, links])
-
   return (
     <div className="relative h-screen w-full bg-black overflow-hidden">
-      {/* 1. LAYER FOND : ÉTOILES */}
       <Starfield />
 
-      {/* 2. LAYER GRAPHE : TRANSPARENT */}
-      <div className="absolute inset-0 z-10">
-        <ForceGraph2D
-          ref={fgRef}
-          width={dimensions.width}
-          height={dimensions.height}
-          graphData={graphData}
-          // Interactions
-          onNodeHover={handleNodeHover}
-          onNodeClick={(node) => window.open(node.id, "_blank")}
-          // Physique
-          cooldownTicks={100}
-          d3VelocityDecay={0.3}
-          d3AlphaDecay={0.02}
-          // Liens (Focus Mode)
-          linkColor={(link) =>
-            hoverNode && !highlightLinks.has(link) ? "rgba(255, 255, 255, 0.05)" : "rgba(255, 255, 255, 0.2)"
-          }
-          linkWidth={(link) => (highlightLinks.has(link) ? 2 : 1)}
-          linkDirectionalParticles={hoverNode ? 0 : 2}
-          linkDirectionalParticleWidth={2}
-          linkDirectionalParticleSpeed={0.005}
-          // Noeuds (Focus Mode + Couleurs)
-          nodeCanvasObject={(node: any, ctx, globalScale) => {
-            if (!Number.isFinite(node.x) || !Number.isFinite(node.y)) return
+      <GraphCanvas
+        nodes={nodes}
+        links={links}
+        searchScores={searchScores}
+        seedUrl={url}
+        fgRef={fgRef}
+        onNodeHover={handleNodeHover}
+        hoverNode={hoverNode}
+        highlightNodes={highlightNodes}
+        highlightLinks={highlightLinks}
+      />
 
-            // 1. Est-ce qu'une recherche est active ?
-            // On regarde si on a des scores dans notre dictionnaire
-            const isSearchActive = Object.keys(searchScores).length > 0
+      <h1 className="absolute left-1/2 top-8 z-20 -translate-x-1/2 text-center font-mono text-4xl font-bold tracking-tight text-white drop-shadow-lg pointer-events-none">
+        Web Visualizer
+      </h1>
 
-            const isDimmed = hoverNode && !highlightNodes.has(node.id)
-            const globalAlpha = isDimmed ? 0.1 : 1
-
-            ctx.save()
-            ctx.globalAlpha = globalAlpha
-
-            const r = 4
-            const fontSize = 12 / globalScale
-            const isCrawled = node.status === "crawled"
-            const score = searchScores[node.id]
-
-            // 2. LOGIQUE DE COULEUR (Coeur du changement)
-            let fillStyle: string
-            
-            if (isSearchActive) {
-                // --- MODE RECHERCHE ---
-                // Par défaut, tout le monde est GRIS (même les pages crawlées)
-                fillStyle = "rgba(255, 255, 255, 0.2)" 
-
-                // Sauf si on a un score pertinent
-                if (score !== undefined) {
-                    if (score > 0.75) fillStyle = "#166534" // Vert Foncé (Top)
-                    else if (score > 0.45) fillStyle = "#dc2626" // Rouge (Moyen)
-                }
-            } else {
-                // --- MODE NORMAL ---
-                // Vert si crawlé, Gris si découvert
-                fillStyle = isCrawled ? "#4ade80" : "#94a3b8"
-            }
-
-            try {
-              // 3. LOGIQUE DU GLOW (Lueur autour du point)
-              const glowSize = 12
-              const gradient = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, glowSize)
-
-              if (isSearchActive) {
-                  // En recherche, seuls les résultats brillent
-                  if (score !== undefined && score > 0.75) {
-                      gradient.addColorStop(0, "rgba(22, 101, 52, 0.8)") // Glow Vert
-                  } else if (score !== undefined && score > 0.45) {
-                      gradient.addColorStop(0, "rgba(220, 38, 38, 0.8)") // Glow Rouge
-                  } else {
-                      gradient.addColorStop(0, "rgba(100, 100, 100, 0.1)") // Glow Gris très faible pour les autres
-                  }
-              } else {
-                  // En mode normal
-                  gradient.addColorStop(0, isCrawled ? "rgba(74, 222, 128, 0.6)" : "rgba(148, 163, 184, 0.4)")
-              }
-              
-              gradient.addColorStop(1, "rgba(0, 0, 0, 0)")
-
-              // Dessin du Glow
-              ctx.beginPath()
-              ctx.fillStyle = gradient
-              ctx.arc(node.x, node.y, glowSize, 0, 2 * Math.PI)
-              ctx.fill()
-
-              // Dessin du Coeur (Point central)
-              ctx.beginPath()
-              ctx.fillStyle = fillStyle
-              ctx.arc(node.x, node.y, r, 0, 2 * Math.PI)
-              ctx.fill()
-
-              // 4. LOGIQUE DES LABELS (TEXTE)
-              // On affiche le label si : C'est le seed, OU survolé, OU c'est un résultat pertinent
-              const isRelevantResult = isSearchActive && score !== undefined && score > 0.45;
-
-              if (node.id === normalizeUrl(url) || node === hoverNode || isRelevantResult) {
-                const label = node.title
-                  ? node.title.length > 30
-                    ? node.title.substring(0, 30) + "..."
-                    : node.title
-                  : node.id
-                  
-                ctx.font = `${fontSize}px Sans-Serif`
-                ctx.textAlign = "center"
-                ctx.textBaseline = "middle"
-
-                const textWidth = ctx.measureText(label).width
-                
-                // Fond du texte (plus foncé pour lisibilité)
-                ctx.fillStyle = "rgba(0,0,0,0.8)" 
-                ctx.fillRect(node.x - textWidth / 2 - 2, node.y + glowSize - 6, textWidth + 4, fontSize + 4)
-
-                // Texte blanc brillant
-                ctx.fillStyle = "rgba(255, 255, 255, 1)"
-                ctx.fillText(label, node.x, node.y + glowSize + 2)
-              }
-            } catch (e) {}
-
-            ctx.restore()
-          }}
-          nodeLabel=""
-          backgroundColor="rgba(0,0,0,0)"
+      <DraggableWindow title="Controls" defaultPosition={{ x: 50, y: 120 }} width={500}>
+        <CrawlControls
+          url={url}
+          setUrl={setUrl}
+          isCrawling={isCrawling}
+          isConnected={isConnected}
+          onStartCrawl={handleStartCrawl}
+          onStopCrawl={handleStopCrawl}
+          onReset={handleReset}
+          showSettings={showSettings}
+          setShowSettings={setShowSettings}
+          config={config}
+          setConfig={setConfig}
         />
-      </div>
+      </DraggableWindow>
 
-      {/* 3. LAYER UI : AU DESSUS DE TOUT */}
-      <div className="absolute left-1/2 top-8 z-20 flex -translate-x-1/2 flex-col items-center gap-4 pointer-events-none">
-        <h1 className="text-center font-mono text-4xl font-bold tracking-tight text-white drop-shadow-lg">
-          Web Visualizer
-        </h1>
-
-        <div className="rounded-xl border border-white/20 bg-black/80 p-6 shadow-2xl backdrop-blur-sm pointer-events-auto">
-          <div className="flex items-center gap-3">
-            <input
-              type="url"
-              placeholder="Enter seed URL"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              disabled={isCrawling}
-              className="w-96 rounded-lg border border-white/30 bg-white/10 px-4 py-2 font-mono text-sm text-white focus:outline-none"
-            />
-            {!isCrawling ? (
-              <button
-                onClick={handleStartCrawl}
-                disabled={!url || isConnected}
-                className="flex items-center gap-2 rounded-lg bg-white px-4 py-2 font-medium text-black hover:bg-white/90 disabled:opacity-50"
-              >
-                <Play className="h-4 w-4" /> Start
-              </button>
-            ) : (
-              <button
-                onClick={handleStopCrawl}
-                className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 font-medium text-white hover:bg-red-700"
-              >
-                <Pause className="h-4 w-4" /> Stop
-              </button>
-            )}
-            <button
-              onClick={handleReset}
-              className="rounded-lg border border-white/30 p-2 text-white hover:bg-white/10"
-            >
-              <RotateCcw className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => setShowSettings(!showSettings)}
-              className="rounded-lg border border-white/30 p-2 text-white hover:bg-white/10"
-            >
-              <Settings className="h-4 w-4" />
-            </button>
-          </div>
-          {showSettings && (
-            <div className="mt-4 space-y-3 border-t border-white/20 pt-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs text-white/70">Max Depth</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={config.max_depth}
-                    onChange={(e) => setConfig({ ...config, max_depth: +e.target.value })}
-                    className="w-full bg-white/10 text-white rounded px-2 py-1"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-white/70">Max Pages</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={config.max_pages}
-                    onChange={(e) => setConfig({ ...config, max_pages: +e.target.value })}
-                    className="w-full bg-white/10 text-white rounded px-2 py-1"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs text-white/70">Crawl Mode</label>
-                  <select
-                    value={config.crawl_mode}
-                    onChange={(e) => setConfig({ ...config, crawl_mode: e.target.value as any })}
-                    className="w-full bg-white/10 text-white rounded px-2 py-1"
-                  >
-                    <option value="INTERNAL">INTERNAL</option>
-                    <option value="EXTERNAL">EXTERNAL</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs text-white/70">Algorithm</label>
-                  <select
-                    value={config.algorithm}
-                    onChange={(e) => setConfig({ ...config, algorithm: e.target.value as any })}
-                    className="w-full bg-white/10 text-white rounded px-2 py-1"
-                  >
-                    <option value="BFS">BFS</option>
-                    <option value="DFS">DFS</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {crawlCompleted && (
-          <div className="rounded-xl border border-white/20 bg-black/80 p-6 shadow-2xl backdrop-blur-sm pointer-events-auto">
-            <div className="flex items-center gap-3">
-              <input
-                type="text"
-                placeholder="Search for content..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                disabled={isSearching}
-                className="w-96 rounded-lg border border-white/30 bg-white/10 px-4 py-2 font-mono text-sm text-white focus:outline-none placeholder:text-white/50"
-              />
-              <button
-                onClick={handleSearch}
-                disabled={!searchQuery.trim() || isSearching}
-                className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-              >
-                <Search className="h-4 w-4" />
-                {isSearching ? "Searching..." : "Search"}
-              </button>
-            </div>
-            <div className="mt-3 text-xs text-white/60 text-center">
-              High relevance: <span className="inline-block w-3 h-3 rounded-full bg-[#166534] align-middle"></span>{" "}
-              Green • Medium relevance:{" "}
-              <span className="inline-block w-3 h-3 rounded-full bg-[#dc2626] align-middle ml-1"></span> Red
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="absolute right-8 top-8 z-20 pointer-events-none">
-        <div className="rounded-xl border border-white/20 bg-black/80 p-4 backdrop-blur-sm pointer-events-auto">
-          <div className="space-y-2 font-mono text-sm text-white">
-            <div className="flex justify-between gap-6">
-              <span>Discovered:</span>
-              <span className="font-bold">{stats.discovered}</span>
-            </div>
-            <div className="flex justify-between gap-6">
-              <span>Crawled:</span>
-              <span className="font-bold">{stats.crawled}</span>
-            </div>
-            <div className="flex justify-between gap-6">
-              <span>Links:</span>
-              <span className="font-bold">{stats.links}</span>
-            </div>
-            <div className="mt-2 flex items-center gap-2 border-t border-white/20 pt-2">
-              <div className={`h-2 w-2 rounded-full ${isConnected ? "animate-pulse bg-white" : "bg-white/30"}`} />
-              <span className="text-xs text-white/60">{isConnected ? "Connected" : "Disconnected"}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {nodes.length === 0 && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
-          <div className="text-center">
-            <p className="text-lg text-white/70">Enter a URL to visualize the web</p>
-          </div>
-        </div>
+      {showSettings && (
+        <DraggableWindow
+          title="Settings"
+          defaultPosition={{ x: 50, y: 300 }}
+          width={400}
+          onClose={() => setShowSettings(false)}
+        >
+          <SettingsPanel config={config} setConfig={setConfig} />
+        </DraggableWindow>
       )}
+
+      {crawlCompleted && (
+        <DraggableWindow title="Search" defaultPosition={{ x: 50, y: 480 }} width={500}>
+          <SearchPanel
+            searchQuery={searchQuery}
+            setSearchQuery={setSearchQuery}
+            isSearching={isSearching}
+            onSearch={handleSearch}
+            crawlCompleted={crawlCompleted}
+          />
+        </DraggableWindow>
+      )}
+
+      <StatsPanel stats={stats} isConnected={isConnected} />
     </div>
   )
 }
