@@ -29,7 +29,7 @@ export default function WebVisualizer() {
   const [highlightNodes, setHighlightNodes] = useState(new Set<string>())
   const [highlightLinks, setHighlightLinks] = useState(new Set<Link>())
 
-  const [stats, setStats] = useState({ discovered: 0, crawled: 0, links: 0 })
+  
 
   const [showSettings, setShowSettings] = useState(false)
   const [config, setConfig] = useState<CrawlConfig>({
@@ -123,7 +123,7 @@ export default function WebVisualizer() {
         setIsCrawling(true)
         setNodes([{ id: cleanSeedUrl, url: cleanSeedUrl, status: "discovered", x: 0, y: 0 }])
         setLinks([])
-        setStats({ discovered: 1, crawled: 0, links: 0 })
+        
       }
 
       ws.onmessage = (event) => {
@@ -141,7 +141,6 @@ export default function WebVisualizer() {
               }
               return [...prev, { id: pageUrl, url: pageUrl, title: message.data.title, status: "crawled" }]
             })
-            setStats((prev) => ({ ...prev, crawled: prev.crawled + 1 }))
           } else if (message.type === "link_created") {
             const source = normalizeUrl(message.data.source)
             const target = normalizeUrl(message.data.target)
@@ -161,7 +160,6 @@ export default function WebVisualizer() {
                 newNodes.push({ id: target, url: target, status: "discovered" as const, x: spawnX, y: spawnY })
               }
               if (newNodes.length > 0) {
-                setStats((s) => ({ ...s, discovered: s.discovered + newNodes.length }))
                 return [...prev, ...newNodes]
               }
               return prev
@@ -174,7 +172,6 @@ export default function WebVisualizer() {
                 return sId === source && tId === target
               })
               if (!linkExists) {
-                setStats((s) => ({ ...s, links: s.links + 1 }))
                 return [...prev, { source, target }]
               }
               return prev
@@ -259,7 +256,6 @@ export default function WebVisualizer() {
     setHighlightNodes(new Set())
     setHighlightLinks(new Set())
     setHoverNode(null)
-    setStats({ discovered: 0, crawled: 0, links: 0 })
     setUrl("")
     setSearchQuery("")
     setCrawlCompleted(false)
@@ -276,6 +272,12 @@ export default function WebVisualizer() {
       if (wsRef.current) wsRef.current.close()
     }
   }, [])
+
+  const stats = {
+    discovered: nodes.length,
+    crawled: nodes.filter(n => n.status === "crawled").length,
+    links: links.length
+  }
 
   return (
     <div className="relative h-screen w-full bg-black overflow-hidden">
