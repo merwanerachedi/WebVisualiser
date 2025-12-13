@@ -7,6 +7,7 @@ from typing import Set, Dict, Optional, Literal, List
 import logging
 from datetime import datetime
 from collections import deque
+from fake_useragent import UserAgent # ✅ Seul ajout externe
 
 from .database import Neo4jDatabase
 from .websocket import ConnectionManager
@@ -39,24 +40,15 @@ class WebCrawler:
         self.pages_crawled = 0
         self.links_found = 0
         
-        # ✅ NOUVEAU : Tracker les redirections
-        self.url_redirects: Dict[str, str] = {}  # {url_initiale: url_finale}
-        self.pending_links: List[tuple] = []  # Links à mettre à jour après crawl
+        # Tracker les redirections (comme dans ton original)
+        self.url_redirects: Dict[str, str] = {}
+        self.pending_links: List[tuple] = []
         
-        # Configuration
         self.root_domain = urlparse(root_url).netloc
         self.timeout = aiohttp.ClientTimeout(total=30)
 
-        # ✅ NOUVEAU : Headers réalistes
-        self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'DNT': '1',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1'
-        }
+        # ✅ AJOUT : Fake User Agent pour passer incognito
+        self.ua = UserAgent() 
         
         if algorithm == "BFS":
             self.to_visit = deque()
@@ -65,36 +57,42 @@ class WebCrawler:
         
         logger.info(f"WebCrawler initialized: mode={crawl_mode}, algo={algorithm}")
 
+    def _get_headers(self):
+        """Génère des headers aléatoires (Mode Ninja)"""
+        return {
+            'User-Agent': self.ua.random, # Change à chaque fois
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'DNT': '1',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1'
+        }
+
     @staticmethod
     def _normalize_url(url: str) -> str:
-        """Normaliser une URL pour comparaison"""
+        """Ta normalisation d'origine (restaurée)"""
         parsed = urlparse(url)
-        
-        # Retirer le trailing slash sauf pour la racine
         path = parsed.path.rstrip('/') if parsed.path != '/' else '/'
-        
-        # Reconstruire l'URL normalisée
         normalized = urlunparse((
             parsed.scheme,
-            parsed.netloc.lower(),  # Domaine en minuscule
+            parsed.netloc.lower(),
             path,
-            '',  # params
+            '', 
             parsed.query,
-            ''   # fragment (déjà retiré)
+            '' 
         ))
-        
         return normalized
     
     async def start(self):
-        """Démarrer le crawl"""
         logger.info(f"Starting crawl {self.crawl_id} for {self.root_url}")
         
         self._add_to_queue(self.root_url, 0)
         
-        async with aiohttp.ClientSession(
-            timeout=self.timeout,
-            headers=self.headers
-            ) as session:
+        # ✅ Utilisation des headers dynamiques
+        headers = self._get_headers()
+        
+        async with aiohttp.ClientSession(timeout=self.timeout, headers=headers) as session:
             while self._has_urls() and self.pages_crawled < self.max_pages:
                 queue_len = len(self.to_visit)
                 logger.debug(f"Queue size for {self.crawl_id}: {queue_len}")
@@ -107,11 +105,12 @@ class WebCrawler:
                     continue
                 
                 self.visited_urls.add(url)
+                
+                # ❌ SUPPRIMÉ : Le délai (sleep). Retour à la vitesse max.
+                
                 await self._crawl_page(session, url, depth)
         
-        # ✅ NOUVEAU : Mettre à jour les liens après le crawl
         await self._update_redirect_links()
-        
         await self._finalize_crawl()
         logger.info(f"Crawl {self.crawl_id} completed. Pages: {self.pages_crawled}, Links: {self.links_found}")
     
@@ -132,7 +131,6 @@ class WebCrawler:
             return self.to_visit.pop(0)
     
     async def _crawl_page(self, session: aiohttp.ClientSession, url: str, depth: int):
-        """Crawler une page spécifique"""
         try:
             logger.info(f"Crawling {url} (depth: {depth})")
             
@@ -145,27 +143,22 @@ class WebCrawler:
                 elif status_code >= 400:
                     logger.warning(f"❌ Error {status_code}: {url}")
                 
-                # ✅ Récupérer l'URL finale
                 final_url = str(response.url)
                 
-                # ✅ Si redirect, enregistrer les deux pages
                 if final_url != url:
                     logger.info(f"🔀 Redirect: {url} → {final_url}")
                     self.url_redirects[url] = final_url
                     
-                    # Créer une page pour l'URL de redirect (status 30x)
                     redirect_data = {
                         "domain": urlparse(url).netloc,
                         "path": urlparse(url).path,
-                        "status_code": 301,  # ou response.history[0].status si disponible
+                        "status_code": 301,
                         "content_type": "redirect"
                     }
-                    self.db.create_or_update_page(url, redirect_data)
-                    
-                    # Marquer l'URL finale comme visitée aussi
+                    # ✅ AWAIT ajouté
+                    await self.db.create_or_update_page(url, redirect_data)
                     self.visited_urls.add(final_url)
                 
-                # ✅ Utiliser l'URL finale pour la page réelle
                 parsed_url = urlparse(final_url)
                 page_data = PageData(
                     url=final_url,
@@ -184,7 +177,8 @@ class WebCrawler:
                     
                     data_dict = page_data.dict()
                     data_dict.pop('url', None)
-                    self.db.create_or_update_page(final_url, data_dict)
+                    # ✅ AWAIT ajouté
+                    await self.db.create_or_update_page(final_url, data_dict)
                     self.pages_crawled += 1
                     
                     await self.manager.broadcast(self.crawl_id, {
@@ -198,7 +192,8 @@ class WebCrawler:
                 else:
                     data_dict = page_data.dict()
                     data_dict.pop('url', None)
-                    self.db.create_or_update_page(final_url, data_dict)
+                    # ✅ AWAIT ajouté
+                    await self.db.create_or_update_page(final_url, data_dict)
                     await self.manager.broadcast(self.crawl_id, {
                         "type": "page_discovered",
                         "data": page_data.dict()
@@ -210,9 +205,12 @@ class WebCrawler:
             logger.error(f"❌ Error crawling {url}: {e}")
     
     async def _extract_links(self, soup: BeautifulSoup, current_url: str, current_depth: int):
-        """Extraire les liens d'une page"""
+        """Extraire les liens (Logique originale restaurée)"""
         current_domain = urlparse(current_url).netloc
+        
+        # ✅ On calcule ça une seule fois, comme avant
         normalized_current = self._normalize_url(current_url)
+
         for link_tag in soup.find_all('a', href=True):
             href = link_tag['href']
             anchor_text = link_tag.get_text(strip=True)
@@ -220,37 +218,33 @@ class WebCrawler:
             absolute_url = urljoin(current_url, href)
             absolute_url = absolute_url.split('#')[0]
 
-            # ✅ Normaliser l'URL target
+            # ✅ RESTAURATION EXACTE DE TA LOGIQUE SELF-LINK
             normalized_target = self._normalize_url(absolute_url)
-        
-            # ✅ Ignorer les self-links (avec normalisation)
+            
             if normalized_target == normalized_current:
                 logger.debug(f"⛔ Skipping self-link: {current_url} → {absolute_url}")
                 continue
             
             if not self._should_crawl(absolute_url, current_domain):
-                logger.debug(f"Skipping by mode/filters: {absolute_url} (from {current_url})")
+                logger.debug(f"Skipping by mode/filters: {absolute_url}")
                 continue
 
-            # 4. ✅ Résoudre l'URL finale si redirect connu
-            # Si absolute_url a déjà été crawlée et a redirigé, utiliser l'URL finale
-            # Sinon, utiliser l'URL originale
             target_url = self.url_redirects.get(absolute_url, absolute_url)
 
-            # 5. ✅ Créer la page target (placeholder si pas encore crawlée)
-            # MERGE = créer si n'existe pas, ne rien faire si existe déjà
             parsed_target = urlparse(target_url)
-            self.db.create_or_update_page(target_url, {
-            "domain": parsed_target.netloc,
-            "path": parsed_target.path,
-            "status_code": 0,  # 0 = pas encore crawlée
-            "title": anchor_text or f"Link from {urlparse(current_url).path}"  # ✅ Anchor text comme title
+            
+            # ✅ AWAIT ajouté
+            await self.db.create_or_update_page(target_url, {
+                "domain": parsed_target.netloc,
+                "path": parsed_target.path,
+                "status_code": 0,
+                "title": anchor_text or f"Link from {urlparse(current_url).path}"
                 })
             
-            # ✅ CRÉER LE LIEN AVEC L'URL ORIGINALE (pas de résolution)
-            self.db.create_link(
+            # ✅ AWAIT ajouté
+            await self.db.create_link(
                 source_url=current_url,
-                target_url=target_url,  # ← URL originale
+                target_url=target_url,
                 link_data={
                     "anchor_text": anchor_text[:200],
                     "crawl_id": self.crawl_id
@@ -258,7 +252,6 @@ class WebCrawler:
             )
             self.links_found += 1
             
-            # ✅ Enregistrer pour mise à jour ultérieure
             self.pending_links.append((current_url, absolute_url))
             
             await self.manager.broadcast(self.crawl_id, {
@@ -269,55 +262,36 @@ class WebCrawler:
                     "anchor": anchor_text[:50]
                 }
             })
-            logger.debug(f"Broadcasted link_created for {current_url} -> {absolute_url} (crawl {self.crawl_id})")
             
             if absolute_url not in self.visited_urls:
                 self._add_to_queue(absolute_url, current_depth + 1)
     
     async def _update_redirect_links(self):
-        """✅ NOUVEAU : Mettre à jour les liens après le crawl"""
         if not self.url_redirects:
             return
         
         logger.info(f"Updating {len(self.pending_links)} links for redirects...")
         
-        with self.db.driver.session() as session:
-            for source_url, target_url in self.pending_links:
-                # Si la target a été redirigée, mettre à jour le lien
-                if target_url in self.url_redirects:
-                    final_target = self.url_redirects[target_url]
-                    
-                    # Supprimer l'ancien lien
-                    session.run("""
-                        MATCH (source:Page {url: $source_url})-[old:LINKS_TO]->(target:Page {url: $target_url})
-                        DELETE old
-                    """, source_url=source_url, target_url=target_url)  
-                    
-                    # Créer le nouveau lien vers l'URL finale
-                    session.run("""
-                        MATCH (source:Page {url: $source_url})
-                        MATCH (target:Page {url: $final_target})
-                        MERGE (source)-[r:LINKS_TO]->(target)
-                        ON CREATE SET
-                            r.crawl_id = $crawl_id,
-                            r.was_redirected = true,
-                            r.original_url = $target_url
-                    """, source_url=source_url, final_target=final_target, target_url=target_url, crawl_id=self.crawl_id)
+        # ✅ Utilisation de la méthode Async de database.py
+        for source_url, target_url in self.pending_links:
+            if target_url in self.url_redirects:
+                final_target = self.url_redirects[target_url]
+                
+                await self.db.update_redirect_link(source_url, target_url, final_target, self.crawl_id)
 
-                    # ✅ AJOUT : Prévenir le front de faire la mise à jour visuelle
-                    await self.manager.send_personal_message({
+                await self.manager.send_personal_message({
                     "type": "redirect_corrected",
                     "data": {
-                    "source": source_url,      # La page A
-                    "old_target": target_url, # Le redirect B (à supprimer)
-                    "new_target": final_target         # La vraie page C
-    }
-}, self.crawl_id)
-                    
-                    logger.info(f"Updated link: {source_url} → {target_url} → {final_target}")
+                        "source": source_url,
+                        "old_target": target_url,
+                        "new_target": final_target
+                    }
+                }, self.crawl_id)
+                
+                logger.info(f"Updated link: {source_url} → {target_url} → {final_target}")
     
     def _should_crawl(self, urlTarget: str, urlSource_Domain: str) -> bool:
-        """Vérifier si une URL doit être crawlée selon le mode"""
+        # Ta logique originale inchangée
         parsed = urlparse(urlTarget)
         
         if parsed.scheme not in ('http', 'https'):
@@ -341,39 +315,14 @@ class WebCrawler:
         return False
     
     async def _finalize_crawl(self):
-        """Finaliser le crawl"""
-        
-        # ✅ Compter les placeholders
-        with self.db.driver.session() as session:
-            stats = session.run("""
-                MATCH (p:Page)
-                RETURN 
-                    sum(CASE WHEN p.status_code > 0 THEN 1 ELSE 0 END) as pages_crawled,
-                    sum(CASE WHEN p.status_code = 0 THEN 1 ELSE 0 END) as pages_discovered
-            """).single()
-            
-            pages_crawled = stats["pages_crawled"]
-            pages_discovered = stats["pages_discovered"]
-            
-            session.run("""
-                MATCH (c:Crawl {crawl_id: $crawl_id})
-                SET c.completed_at = datetime(),
-                    c.status = 'completed',
-                    c.pages_crawled = $pages_crawled,
-                    c.pages_discovered = $pages_discovered,
-                    c.links_found = $links_found
-            """, 
-            crawl_id=self.crawl_id, 
-            pages_crawled=pages_crawled,
-            pages_discovered=pages_discovered,
-            links_found=self.links_found
-            )
+        # ✅ AWAIT ajouté
+        await self.db.finalize_crawl(self.crawl_id, self.pages_crawled, self.links_found)
         
         await self.manager.broadcast(self.crawl_id, {
-            "type": "crawl_complete",
+            "type": "crawl_completed",
             "data": {
-                "pages_crawled": pages_crawled,      # Pages vraiment visitées
-                "pages_discovered": pages_discovered, # Placeholders (pas encore crawlés)
+                "pages_crawled": self.pages_crawled,
+                "pages_discovered": 0, 
                 "links_found": self.links_found
             }
         })
