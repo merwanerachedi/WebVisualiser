@@ -7,7 +7,7 @@ from typing import Set, Dict, Optional, Literal, List
 import logging
 from datetime import datetime
 from collections import deque
-from fake_useragent import UserAgent # ✅ Seul ajout externe
+from fake_useragent import UserAgent
 
 from .database import Neo4jDatabase
 from .websocket import ConnectionManager
@@ -40,14 +40,14 @@ class WebCrawler:
         self.pages_crawled = 0
         self.links_found = 0
         
-        # Tracker les redirections (comme dans ton original)
+        # Tracker les redirections
         self.url_redirects: Dict[str, str] = {}
         self.pending_links: List[tuple] = []
         
         self.root_domain = urlparse(root_url).netloc
         self.timeout = aiohttp.ClientTimeout(total=30)
 
-        # ✅ AJOUT : Fake User Agent pour passer incognito
+        # Fake User Agent pour passer incognito
         self.ua = UserAgent() 
         
         if algorithm == "BFS":
@@ -55,12 +55,25 @@ class WebCrawler:
         else:
             self.to_visit = []
         
+        # ✅ NOUVEAU : Compteur pour réguler le débit WebSocket
+        self.msg_count = 0
+
         logger.info(f"WebCrawler initialized: mode={crawl_mode}, algo={algorithm}")
+
+    async def _broadcast_throttled(self, message: dict):
+        """Envoie un message WebSocket avec une micro-pause régulière pour ne pas tuer le Front"""
+        await self.manager.broadcast(self.crawl_id, message)
+        
+        self.msg_count += 1
+        # Tous les 10 messages, on dort 20ms
+        # Cela limite le débit max à ~500 messages/seconde, ce qui est digeste pour le navigateur
+        if self.msg_count % 10 == 0:
+            await asyncio.sleep(0.02)
 
     def _get_headers(self):
         """Génère des headers aléatoires (Mode Ninja)"""
         return {
-            'User-Agent': self.ua.random, # Change à chaque fois
+            'User-Agent': self.ua.random,
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.5',
             'Accept-Encoding': 'gzip, deflate, br',
@@ -71,7 +84,6 @@ class WebCrawler:
 
     @staticmethod
     def _normalize_url(url: str) -> str:
-        """Ta normalisation d'origine (restaurée)"""
         parsed = urlparse(url)
         path = parsed.path.rstrip('/') if parsed.path != '/' else '/'
         normalized = urlunparse((
@@ -88,12 +100,14 @@ class WebCrawler:
         logger.info(f"Starting crawl {self.crawl_id} for {self.root_url}")
         
         self._add_to_queue(self.root_url, 0)
-        
-        # ✅ Utilisation des headers dynamiques
         headers = self._get_headers()
         
         async with aiohttp.ClientSession(timeout=self.timeout, headers=headers) as session:
             while self._has_urls() and self.pages_crawled < self.max_pages:
+                
+                # ✅ AJOUT : Petite pause pour laisser respirer la boucle d'événements Python
+                await asyncio.sleep(0.01)
+
                 queue_len = len(self.to_visit)
                 logger.debug(f"Queue size for {self.crawl_id}: {queue_len}")
                 url, depth = self._get_next_url()
@@ -105,9 +119,6 @@ class WebCrawler:
                     continue
                 
                 self.visited_urls.add(url)
-                
-                # ❌ SUPPRIMÉ : Le délai (sleep). Retour à la vitesse max.
-                
                 await self._crawl_page(session, url, depth)
         
         await self._update_redirect_links()
@@ -155,7 +166,6 @@ class WebCrawler:
                         "status_code": 301,
                         "content_type": "redirect"
                     }
-                    # ✅ AWAIT ajouté
                     await self.db.create_or_update_page(url, redirect_data)
                     self.visited_urls.add(final_url)
                 
@@ -175,27 +185,21 @@ class WebCrawler:
                     title_tag = soup.find('title')
                     page_data.title = title_tag.string.strip() if title_tag else None
                     
-                    # EXTRACTION DU TEXTE PROPRE POUR L'IA
-                    # On vire les scripts et le style pour ne pas polluer l'IA
                     for script in soup(["script", "style"]):
                         script.decompose()
                     
-                    # On récupère le texte visible
                     text_content = soup.get_text(separator=' ', strip=True)
-                    
-                    # On coupe si c'est trop long (les modèles ont une limite, souvent 512 tokens)
-                    # On garde les 2000 premiers caractères pour l'instant, c'est souvent suffisant pour comprendre le sujet
                     text_content_sample = text_content[:2000] 
 
                     data_dict = page_data.dict()
                     data_dict.pop('url', None)
                     
-                    # ✅ 3. APPEL AVEC LE TEXTE
                     await self.db.create_or_update_page(final_url, data_dict, text_content=text_content_sample)
                     
                     self.pages_crawled += 1
                     
-                    await self.manager.broadcast(self.crawl_id, {
+                    # ✅ UTILISATION DU THROTTLING
+                    await self._broadcast_throttled({
                         "type": "page_discovered",
                         "data": page_data.dict()
                     })
@@ -206,9 +210,10 @@ class WebCrawler:
                 else:
                     data_dict = page_data.dict()
                     data_dict.pop('url', None)
-                    # ✅ AWAIT ajouté
                     await self.db.create_or_update_page(final_url, data_dict)
-                    await self.manager.broadcast(self.crawl_id, {
+                    
+                    # ✅ UTILISATION DU THROTTLING
+                    await self._broadcast_throttled({
                         "type": "page_discovered",
                         "data": page_data.dict()
                     })
@@ -219,10 +224,7 @@ class WebCrawler:
             logger.error(f"❌ Error crawling {url}: {e}")
     
     async def _extract_links(self, soup: BeautifulSoup, current_url: str, current_depth: int):
-        """Extraire les liens (Logique originale restaurée)"""
         current_domain = urlparse(current_url).netloc
-        
-        # ✅ On calcule ça une seule fois, comme avant
         normalized_current = self._normalize_url(current_url)
 
         for link_tag in soup.find_all('a', href=True):
@@ -232,22 +234,17 @@ class WebCrawler:
             absolute_url = urljoin(current_url, href)
             absolute_url = absolute_url.split('#')[0]
 
-            # ✅ RESTAURATION EXACTE DE TA LOGIQUE SELF-LINK
             normalized_target = self._normalize_url(absolute_url)
             
             if normalized_target == normalized_current:
-                logger.debug(f"⛔ Skipping self-link: {current_url} → {absolute_url}")
                 continue
             
             if not self._should_crawl(absolute_url, current_domain):
-                logger.debug(f"Skipping by mode/filters: {absolute_url}")
                 continue
 
             target_url = self.url_redirects.get(absolute_url, absolute_url)
-
             parsed_target = urlparse(target_url)
             
-            # ✅ AWAIT ajouté
             await self.db.create_or_update_page(target_url, {
                 "domain": parsed_target.netloc,
                 "path": parsed_target.path,
@@ -255,7 +252,6 @@ class WebCrawler:
                 "title": anchor_text or f"Link from {urlparse(current_url).path}"
                 })
             
-            # ✅ AWAIT ajouté
             await self.db.create_link(
                 source_url=current_url,
                 target_url=target_url,
@@ -268,7 +264,8 @@ class WebCrawler:
             
             self.pending_links.append((current_url, absolute_url))
             
-            await self.manager.broadcast(self.crawl_id, {
+            # ✅ UTILISATION DU THROTTLING (Critique pour les liens)
+            await self._broadcast_throttled({
                 "type": "link_created",
                 "data": {
                     "source": current_url,
@@ -286,7 +283,8 @@ class WebCrawler:
         
         logger.info(f"Updating {len(self.pending_links)} links for redirects...")
         
-        # ✅ Utilisation de la méthode Async de database.py
+        processed_count = 0
+        
         for source_url, target_url in self.pending_links:
             if target_url in self.url_redirects:
                 final_target = self.url_redirects[target_url]
@@ -303,9 +301,13 @@ class WebCrawler:
                 }, self.crawl_id)
                 
                 logger.info(f"Updated link: {source_url} → {target_url} → {final_target}")
-    
+                
+                # Ta régulation existante (je l'ai laissée telle quelle)
+                processed_count += 1
+                if processed_count % 10 == 0:
+                    await asyncio.sleep(1)
+
     def _should_crawl(self, urlTarget: str, urlSource_Domain: str) -> bool:
-        # Ta logique originale inchangée
         parsed = urlparse(urlTarget)
         
         if parsed.scheme not in ('http', 'https'):
@@ -329,7 +331,6 @@ class WebCrawler:
         return False
     
     async def _finalize_crawl(self):
-        # ✅ AWAIT ajouté
         await self.db.finalize_crawl(self.crawl_id, self.pages_crawled, self.links_found)
         
         await self.manager.broadcast(self.crawl_id, {

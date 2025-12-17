@@ -93,15 +93,35 @@ async def websocket_endpoint(websocket: WebSocket, crawl_id: str):
                 except Exception as e:
                     logger.error(f"❌ CRITICAL CRAWLER ERROR: {str(e)}")
                     traceback.print_exc()
+                finally:
+                    # ✅ Nettoyer le crawler quand il est terminé
+                    if crawl_id in active_crawlers:
+                        del active_crawlers[crawl_id]
 
             asyncio.create_task(run_crawl_wrapper())
         
         while True:
-            await asyncio.wait_for(websocket.receive_text(), timeout=60.0)
+            try:
+                # ✅ Attendre un message avec timeout de 30 secondes
+                message = await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
+                
+                # ✅ Répondre au ping du frontend
+                if message == "ping":
+                    await websocket.send_text("pong")
+                    
+            except asyncio.TimeoutError:
+                # ✅ Pas de message ? On vérifie si le crawl est encore actif
+                if crawl_id not in active_crawlers:
+                    # Le crawl est terminé, on peut fermer proprement
+                    logger.info(f"Crawl {crawl_id} finished, closing WebSocket")
+                    break
+                # Sinon on continue d'attendre (le crawl est encore en cours)
+                continue
                 
     except WebSocketDisconnect:
         manager.disconnect(crawl_id, websocket)
-    except Exception:
+    except Exception as e:
+        logger.error(f"WebSocket error for {crawl_id}: {e}")
         manager.disconnect(crawl_id, websocket)
 
 @app.get("/api/crawl/{crawl_id}/graph")

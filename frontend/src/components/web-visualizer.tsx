@@ -29,7 +29,7 @@ export default function WebVisualizer() {
   const [highlightNodes, setHighlightNodes] = useState(new Set<string>())
   const [highlightLinks, setHighlightLinks] = useState(new Set<Link>())
 
-  
+
 
   const [showSettings, setShowSettings] = useState(false)
   const [config, setConfig] = useState<CrawlConfig>({
@@ -118,15 +118,27 @@ export default function WebVisualizer() {
 
       const ws = new WebSocket(`ws://localhost:8000/ws/${crawlId}`)
 
+      // ✅ Variable pour stocker l'intervalle de ping
+      let pingInterval: NodeJS.Timeout | null = null
+
       ws.onopen = () => {
         setIsConnected(true)
         setIsCrawling(true)
         setNodes([{ id: cleanSeedUrl, url: cleanSeedUrl, status: "discovered", x: 0, y: 0 }])
         setLinks([])
-        
+
+        // ✅ Envoyer un ping toutes les 20 secondes pour garder la connexion vivante
+        pingInterval = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send("ping")
+          }
+        }, 20000)
       }
 
       ws.onmessage = (event) => {
+        // ✅ Ignorer les réponses "pong" du serveur
+        if (event.data === "pong") return
+
         try {
           const message: WebSocketMessage = JSON.parse(event.data)
 
@@ -180,6 +192,8 @@ export default function WebVisualizer() {
             setIsCrawling(false)
             setIsConnected(false)
             setCrawlCompleted(true)
+            // ✅ Nettoyer l'intervalle de ping
+            if (pingInterval) clearInterval(pingInterval)
             ws.close()
             wsRef.current = null
             if (fgRef.current) fgRef.current.zoomToFit(1000, 50)
@@ -223,10 +237,14 @@ export default function WebVisualizer() {
         }
       }
       ws.onerror = () => {
+        // ✅ Nettoyer l'intervalle de ping en cas d'erreur
+        if (pingInterval) clearInterval(pingInterval)
         setIsConnected(false)
         setIsCrawling(false)
       }
       ws.onclose = () => {
+        // ✅ Nettoyer l'intervalle de ping à la fermeture
+        if (pingInterval) clearInterval(pingInterval)
         setIsConnected(false)
         setIsCrawling(false)
       }
