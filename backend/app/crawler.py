@@ -105,8 +105,13 @@ class WebCrawler:
         async with aiohttp.ClientSession(timeout=self.timeout, headers=headers) as session:
             while self._has_urls() and self.pages_crawled < self.max_pages:
                 
-                # ✅ AJOUT : Petite pause pour laisser respirer la boucle d'événements Python
+                # Petite pause pour laisser respirer la boucle d'événements Python
                 await asyncio.sleep(0.01)
+
+                # Vérifier si des clients sont encore connectés
+                if not self.manager.has_connections(self.crawl_id):
+                    logger.warning(f"No clients connected for crawl {self.crawl_id}, stopping.")
+                    break
 
                 queue_len = len(self.to_visit)
                 logger.debug(f"Queue size for {self.crawl_id}: {queue_len}")

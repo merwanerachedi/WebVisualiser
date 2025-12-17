@@ -51,3 +51,7 @@ class ConnectionManager:
         Note l'inversion des arguments (message, crawl_id) vs (crawl_id, message)
         """
         await self.broadcast(crawl_id, message)
+    
+    def has_connections(self, crawl_id: str) -> bool:
+        """Vérifie si au moins un client est connecté pour ce crawl"""
+        return crawl_id in self.active_connections and len(self.active_connections[crawl_id]) > 0

@@ -136,7 +136,7 @@ export default function WebVisualizer() {
       }
 
       ws.onmessage = (event) => {
-        // ✅ Ignorer les réponses "pong" du serveur
+        //Ignorer les réponses "pong" du serveur
         if (event.data === "pong") return
 
         try {
@@ -192,7 +192,6 @@ export default function WebVisualizer() {
             setIsCrawling(false)
             setIsConnected(false)
             setCrawlCompleted(true)
-            // ✅ Nettoyer l'intervalle de ping
             if (pingInterval) clearInterval(pingInterval)
             ws.close()
             wsRef.current = null
@@ -237,13 +236,11 @@ export default function WebVisualizer() {
         }
       }
       ws.onerror = () => {
-        // ✅ Nettoyer l'intervalle de ping en cas d'erreur
         if (pingInterval) clearInterval(pingInterval)
         setIsConnected(false)
         setIsCrawling(false)
       }
       ws.onclose = () => {
-        // ✅ Nettoyer l'intervalle de ping à la fermeture
         if (pingInterval) clearInterval(pingInterval)
         setIsConnected(false)
         setIsCrawling(false)
