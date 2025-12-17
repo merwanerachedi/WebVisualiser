@@ -42,6 +42,7 @@ export default function WebVisualizer() {
   const [searchQuery, setSearchQuery] = useState("")
   const [isSearching, setIsSearching] = useState(false)
   const [crawlCompleted, setCrawlCompleted] = useState(false)
+  const [isStopping, setIsStopping] = useState(false)
 
   const wsRef = useRef<WebSocket | null>(null)
   const fgRef = useRef<any>(null)
@@ -192,6 +193,7 @@ export default function WebVisualizer() {
             setIsCrawling(false)
             setIsConnected(false)
             setCrawlCompleted(true)
+            setIsStopping(false)
             if (pingInterval) clearInterval(pingInterval)
             ws.close()
             wsRef.current = null
@@ -253,14 +255,12 @@ export default function WebVisualizer() {
   }, [url, config])
 
   const handleStopCrawl = useCallback(() => {
-    if (wsRef.current) {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      // Activer l'état "Finalisation en cours"
+      setIsStopping(true)
+      // Envoyer la demande d'arrêt gracieux
       wsRef.current.send(JSON.stringify({ action: "stop_crawl" }))
-      wsRef.current.close()
-      wsRef.current = null
     }
-    setIsCrawling(false)
-    setIsConnected(false)
-    setCrawlCompleted(true)
   }, [])
 
   const handleReset = useCallback(() => {
@@ -320,6 +320,7 @@ export default function WebVisualizer() {
           setUrl={setUrl}
           isCrawling={isCrawling}
           isConnected={isConnected}
+          isStopping={isStopping}
           onStartCrawl={handleStartCrawl}
           onStopCrawl={handleStopCrawl}
           onReset={handleReset}

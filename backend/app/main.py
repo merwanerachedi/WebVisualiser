@@ -108,6 +108,17 @@ async def websocket_endpoint(websocket: WebSocket, crawl_id: str):
                 # ✅ Répondre au ping du frontend
                 if message == "ping":
                     await websocket.send_text("pong")
+                else:
+                    # Traiter les autres messages JSON
+                    try:
+                        import json
+                        data = json.loads(message)
+                        if data.get("action") == "stop_crawl":
+                            logger.info(f"Stop crawl requested for {crawl_id}")
+                            if crawl_id in active_crawlers:
+                                active_crawlers[crawl_id].request_stop()
+                    except json.JSONDecodeError:
+                        pass
                     
             except asyncio.TimeoutError:
                 # ✅ Pas de message ? On vérifie si le crawl est encore actif

@@ -57,8 +57,16 @@ class WebCrawler:
         
         # ✅ NOUVEAU : Compteur pour réguler le débit WebSocket
         self.msg_count = 0
+        
+        # Flag pour arrêt gracieux du crawl
+        self.stop_requested = False
 
         logger.info(f"WebCrawler initialized: mode={crawl_mode}, algo={algorithm}")
+
+    def request_stop(self):
+        """Demande l'arrêt gracieux du crawl (les redirects seront envoyées avant la fin)"""
+        logger.info(f"Stop requested for crawl {self.crawl_id}")
+        self.stop_requested = True
 
     async def _broadcast_throttled(self, message: dict):
         """Envoie un message WebSocket avec une micro-pause régulière pour ne pas tuer le Front"""
@@ -111,6 +119,11 @@ class WebCrawler:
                 # Vérifier si des clients sont encore connectés
                 if not self.manager.has_connections(self.crawl_id):
                     logger.warning(f"No clients connected for crawl {self.crawl_id}, stopping.")
+                    break
+
+                # Vérifier si un arrêt gracieux a été demandé
+                if self.stop_requested:
+                    logger.info(f"Graceful stop for crawl {self.crawl_id}, processing redirects...")
                     break
 
                 queue_len = len(self.to_visit)
