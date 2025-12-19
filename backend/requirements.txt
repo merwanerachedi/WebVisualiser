@@ -14,3 +14,4 @@ python-dotenv==1.0.0
 aiohttp[speedups]
 fake-useragent==1.4.0
 sentence-transformers>=3.0.0
+ruff>=0.8.0

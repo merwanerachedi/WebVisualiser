@@ -1,16 +1,17 @@
 # backend/app/main.py
 # (Imports existants...)
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.middleware.cors import CORSMiddleware
-import uuid
 import asyncio
 import logging
 import traceback
+import uuid
 from datetime import datetime
 
-from .models import CrawlRequest, CrawlResponse
-from .database import db
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+
 from .crawler import WebCrawler
+from .database import db
+from .models import CrawlRequest, CrawlResponse
 from .websocket import ConnectionManager
 
 logging.basicConfig(level=logging.INFO)
@@ -30,28 +31,31 @@ manager = ConnectionManager()
 pending_crawls = {}
 active_crawlers = {}
 
+
 @app.on_event("startup")
 async def startup_event():
     # ✅ Vérification connexion DB au démarrage
     await db.verify_connection()
+
 
 @app.on_event("shutdown")
 async def shutdown_event():
     # ✅ Fermeture propre
     await db.close()
 
+
 @app.post("/api/crawl", response_model=CrawlResponse)
 async def create_crawl(request: CrawlRequest):
     crawl_id = str(uuid.uuid4())
     root_url = str(request.url)
-    
+
     try:
         # ✅ AWAIT CALL
         await db.create_crawl(crawl_id, root_url, request.max_depth)
     except Exception as e:
         logger.error(f"❌ DB Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-    
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
     pending_crawls[crawl_id] = {
         "root_url": root_url,
         "max_depth": request.max_depth,
@@ -59,15 +63,16 @@ async def create_crawl(request: CrawlRequest):
         "crawl_mode": request.crawl_mode,
         "algorithm": request.algorithm,
     }
-    
+
     return CrawlResponse(
         crawl_id=crawl_id,
         status="pending",
         root_url=root_url,
         started_at=datetime.now(),
         crawl_mode=request.crawl_mode,
-        algorithm=request.algorithm
+        algorithm=request.algorithm,
     )
+
 
 @app.websocket("/ws/{crawl_id}")
 async def websocket_endpoint(websocket: WebSocket, crawl_id: str):
@@ -83,10 +88,10 @@ async def websocket_endpoint(websocket: WebSocket, crawl_id: str):
                 db=db,
                 manager=manager,
                 crawl_mode=config["crawl_mode"],
-                algorithm=config["algorithm"]
+                algorithm=config["algorithm"],
             )
             active_crawlers[crawl_id] = crawler
-            
+
             async def run_crawl_wrapper():
                 try:
                     await crawler.start()
@@ -99,12 +104,12 @@ async def websocket_endpoint(websocket: WebSocket, crawl_id: str):
                         del active_crawlers[crawl_id]
 
             asyncio.create_task(run_crawl_wrapper())
-        
+
         while True:
             try:
                 # ✅ Attendre un message avec timeout de 30 secondes
                 message = await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
-                
+
                 # ✅ Répondre au ping du frontend
                 if message == "ping":
                     await websocket.send_text("pong")
@@ -112,6 +117,7 @@ async def websocket_endpoint(websocket: WebSocket, crawl_id: str):
                     # Traiter les autres messages JSON
                     try:
                         import json
+
                         data = json.loads(message)
                         if data.get("action") == "stop_crawl":
                             logger.info(f"Stop crawl requested for {crawl_id}")
@@ -119,8 +125,8 @@ async def websocket_endpoint(websocket: WebSocket, crawl_id: str):
                                 active_crawlers[crawl_id].request_stop()
                     except json.JSONDecodeError:
                         pass
-                    
-            except asyncio.TimeoutError:
+
+            except TimeoutError:
                 # ✅ Pas de message ? On vérifie si le crawl est encore actif
                 if crawl_id not in active_crawlers:
                     # Le crawl est terminé, on peut fermer proprement
@@ -128,12 +134,13 @@ async def websocket_endpoint(websocket: WebSocket, crawl_id: str):
                     break
                 # Sinon on continue d'attendre (le crawl est encore en cours)
                 continue
-                
+
     except WebSocketDisconnect:
         manager.disconnect(crawl_id, websocket)
     except Exception as e:
         logger.error(f"WebSocket error for {crawl_id}: {e}")
         manager.disconnect(crawl_id, websocket)
+
 
 @app.get("/api/crawl/{crawl_id}/graph")
 async def get_crawl_graph(crawl_id: str):
@@ -142,16 +149,14 @@ async def get_crawl_graph(crawl_id: str):
     return graph
 
 
-@app.get("/api/search")             
-async def search_pages(q: str):     
-  
-    if not q:                       
+@app.get("/api/search")
+async def search_pages(q: str):
+    if not q:
         return []
-    
+
     try:
-        
         results = await db.search_similar_pages(q, top_k=5)
-        return results               
+        return results
     except Exception as e:
         logger.error(f"Search error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e

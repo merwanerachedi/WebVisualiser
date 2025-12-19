@@ -1,7 +1,6 @@
 "use client"
 
 import { Play, Pause, RotateCcw, Settings, Loader2 } from "lucide-react"
-import type { CrawlConfig } from "./types"
 
 interface CrawlControlsProps {
   url: string
@@ -14,8 +13,6 @@ interface CrawlControlsProps {
   onReset: () => void
   showSettings: boolean
   setShowSettings: (show: boolean) => void
-  config: CrawlConfig
-  setConfig: (config: CrawlConfig) => void
 }
 
 export function CrawlControls({
@@ -29,8 +26,6 @@ export function CrawlControls({
   onReset,
   showSettings,
   setShowSettings,
-  config,
-  setConfig,
 }: CrawlControlsProps) {
   // Déterminer quel bouton afficher
   const renderActionButton = () => {

@@ -2,3 +2,5 @@ node_modules/
 .next/
 vscodeprojects.code-workspace
 .env
+venv/
+.pnpm-store

@@ -27,7 +27,8 @@ export default function WebVisualizer() {
   // Focus Mode States
   const [hoverNode, setHoverNode] = useState<Node | null>(null)
   const [highlightNodes, setHighlightNodes] = useState(new Set<string>())
-  const [highlightLinks, setHighlightLinks] = useState(new Set<Link>())
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [highlightLinks, setHighlightLinks] = useState(new Set<any>())
 
 
 
@@ -45,6 +46,7 @@ export default function WebVisualizer() {
   const [isStopping, setIsStopping] = useState(false)
 
   const wsRef = useRef<WebSocket | null>(null)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const fgRef = useRef<any>(null)
 
   const handleNodeHover = (node: Node | null) => {
@@ -55,8 +57,8 @@ export default function WebVisualizer() {
     if (node) {
       newHighlightNodes.add(node.id)
       links.forEach((link) => {
-        const sourceId = typeof link.source === "object" ? (link.source as any).id : link.source
-        const targetId = typeof link.target === "object" ? (link.target as any).id : link.target
+        const sourceId = typeof link.source === "object" ? (link.source as Node).id : link.source
+        const targetId = typeof link.target === "object" ? (link.target as Node).id : link.target
         if (sourceId === node.id || targetId === node.id) {
           newHighlightLinks.add(link)
           newHighlightNodes.add(sourceId)
@@ -179,9 +181,9 @@ export default function WebVisualizer() {
             })
 
             setLinks((prev) => {
-              const linkExists = prev.find((l: any) => {
-                const sId = l.source.id || l.source
-                const tId = l.target.id || l.target
+              const linkExists = prev.find((l) => {
+                const sId = typeof l.source === "object" ? (l.source as Node).id : l.source
+                const tId = typeof l.target === "object" ? (l.target as Node).id : l.target
                 return sId === source && tId === target
               })
               if (!linkExists) {
@@ -219,14 +221,14 @@ export default function WebVisualizer() {
             })
 
             setLinks((prev) => {
-              const cleanLinks = prev.filter((l: any) => {
-                const sId = l.source.id || l.source
-                const tId = l.target.id || l.target
+              const cleanLinks = prev.filter((l) => {
+                const sId = typeof l.source === "object" ? (l.source as Node).id : l.source
+                const tId = typeof l.target === "object" ? (l.target as Node).id : l.target
                 return sId !== ot && tId !== ot
               })
-              const exists = cleanLinks.find((l: any) => {
-                const sId = l.source.id || l.source
-                const tId = l.target.id || l.target
+              const exists = cleanLinks.find((l) => {
+                const sId = typeof l.source === "object" ? (l.source as Node).id : l.source
+                const tId = typeof l.target === "object" ? (l.target as Node).id : l.target
                 return sId === s && tId === nt
               })
               if (!exists) return [...cleanLinks, { source: s, target: nt }]
@@ -248,7 +250,7 @@ export default function WebVisualizer() {
         setIsCrawling(false)
       }
       wsRef.current = ws
-    } catch (err) {
+    } catch (_err) {
       setIsCrawling(false)
       setIsConnected(false)
     }
@@ -326,8 +328,6 @@ export default function WebVisualizer() {
           onReset={handleReset}
           showSettings={showSettings}
           setShowSettings={setShowSettings}
-          config={config}
-          setConfig={setConfig}
         />
       </DraggableWindow>
 

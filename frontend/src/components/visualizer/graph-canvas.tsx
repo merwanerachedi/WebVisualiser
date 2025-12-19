@@ -1,10 +1,15 @@
 "use client"
 
 import type React from "react"
-
 import { useEffect, useState, useMemo } from "react"
 import dynamic from "next/dynamic"
 import type { Node, Link } from "./types"
+
+// Node enrichi avec les coordonnées D3 (x, y)
+interface GraphNode extends Node {
+  x: number
+  y: number
+}
 
 const ForceGraph2D = dynamic(() => import("react-force-graph-2d"), {
   ssr: false,
@@ -16,11 +21,13 @@ interface GraphCanvasProps {
   links: Link[]
   searchScores: Record<string, number>
   seedUrl: string
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   fgRef: React.MutableRefObject<any>
   onNodeHover: (node: Node | null) => void
   hoverNode: Node | null
   highlightNodes: Set<string>
-  highlightLinks: Set<Link>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  highlightLinks: Set<any>
 }
 
 const normalizeUrl = (url: string | undefined) => {
@@ -58,7 +65,7 @@ export function GraphCanvas({
         height={dimensions.height}
         graphData={graphData}
         onNodeHover={onNodeHover}
-        onNodeClick={(node) => window.open(node.id, "_blank")}
+        onNodeClick={(node) => window.open(String(node.id), "_blank")}
         cooldownTicks={100}
         d3VelocityDecay={0.3}
         d3AlphaDecay={0.02}
@@ -69,7 +76,9 @@ export function GraphCanvas({
         linkDirectionalParticles={hoverNode ? 0 : 2}
         linkDirectionalParticleWidth={2}
         linkDirectionalParticleSpeed={0.005}
-        nodeCanvasObject={(node: any, ctx, globalScale) => {
+        // CORRECTION 2 : Typage des arguments node, ctx et globalScale
+        nodeCanvasObject={(node: GraphNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
+          // On vérifie que x et y existent bien (sécurité TypeScript + Runtime)
           if (!Number.isFinite(node.x) || !Number.isFinite(node.y)) return
 
           const isSearchActive = Object.keys(searchScores).length > 0
@@ -145,7 +154,7 @@ export function GraphCanvas({
               ctx.fillStyle = "rgba(255, 255, 255, 1)"
               ctx.fillText(label, node.x, node.y + glowSize + 2)
             }
-          } catch (e) {}
+          } catch (_e) { }
 
           ctx.restore()
         }}
