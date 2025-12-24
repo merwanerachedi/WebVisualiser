@@ -2,6 +2,8 @@ import type React from "react"
 import type { Metadata } from "next"
 import { Analytics } from "@vercel/analytics/next"
 import "./globals.css"
+import { AuthProvider } from "@/lib/auth-context"
+import { Navbar } from "@/components/navbar"
 
 
 
@@ -36,9 +38,15 @@ export default function RootLayout({
   return (
     <html lang="fr" className="dark">
       <body className="font-sans antialiased">
-        {children}
+        <AuthProvider>
+          <Navbar />
+          <main className="pt-14">
+            {children}
+          </main>
+        </AuthProvider>
         <Analytics />
       </body>
     </html>
   )
 }
+

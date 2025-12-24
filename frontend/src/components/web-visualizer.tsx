@@ -112,6 +112,7 @@ export default function WebVisualizer() {
       const resp = await fetch("http://localhost:8000/api/crawl", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ url, ...config }),
       })
 
@@ -297,7 +298,7 @@ export default function WebVisualizer() {
   }
 
   return (
-    <div className="relative h-screen w-full bg-black overflow-hidden">
+    <div className="relative h-[calc(100vh-56px)] w-full bg-black overflow-hidden">
       <Starfield />
 
       <GraphCanvas
@@ -312,11 +313,7 @@ export default function WebVisualizer() {
         highlightLinks={highlightLinks}
       />
 
-      <h1 className="absolute left-1/2 top-8 z-20 -translate-x-1/2 text-center font-mono text-4xl font-bold tracking-tight text-white drop-shadow-lg pointer-events-none">
-        Web Visualizer
-      </h1>
-
-      <DraggableWindow title="Controls" defaultPosition={{ x: 50, y: 120 }} width={500}>
+      <DraggableWindow title="Controls" defaultPosition={{ x: 50, y: 30 }} width={500}>
         <CrawlControls
           url={url}
           setUrl={setUrl}
@@ -334,7 +331,7 @@ export default function WebVisualizer() {
       {showSettings && (
         <DraggableWindow
           title="Settings"
-          defaultPosition={{ x: 50, y: 300 }}
+          defaultPosition={{ x: 50, y: 210 }}
           width={400}
           onClose={() => setShowSettings(false)}
         >
@@ -343,7 +340,7 @@ export default function WebVisualizer() {
       )}
 
       {crawlCompleted && (
-        <DraggableWindow title="Search" defaultPosition={{ x: 50, y: 480 }} width={500}>
+        <DraggableWindow title="Search" defaultPosition={{ x: 50, y: 380 }} width={500}>
           <SearchPanel
             searchQuery={searchQuery}
             setSearchQuery={setSearchQuery}

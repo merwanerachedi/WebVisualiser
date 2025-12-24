@@ -6,12 +6,14 @@ import traceback
 import uuid
 from datetime import datetime
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
+from .auth import get_current_user, get_current_user_optional
+from .auth_routes import router as auth_router
 from .crawler import WebCrawler
 from .database import db
-from .models import CrawlRequest, CrawlResponse
+from .models import CrawlHistoryItem, CrawlRequest, CrawlResponse
 from .websocket import ConnectionManager
 
 logging.basicConfig(level=logging.INFO)
@@ -26,6 +28,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include auth routes
+app.include_router(auth_router)
 
 manager = ConnectionManager()
 pending_crawls = {}
@@ -45,13 +50,24 @@ async def shutdown_event():
 
 
 @app.post("/api/crawl", response_model=CrawlResponse)
-async def create_crawl(request: CrawlRequest):
+async def create_crawl(
+    request: CrawlRequest,
+    current_user: dict | None = Depends(get_current_user_optional),
+):
     crawl_id = str(uuid.uuid4())
     root_url = str(request.url)
+    user_id = current_user["user_id"] if current_user else None
 
     try:
-        # ✅ AWAIT CALL
-        await db.create_crawl(crawl_id, root_url, request.max_depth)
+        # Create crawl, optionally linked to user
+        await db.create_crawl(
+            crawl_id=crawl_id,
+            root_url=root_url,
+            max_depth=request.max_depth,
+            user_id=user_id,
+            crawl_mode=request.crawl_mode,
+            algorithm=request.algorithm,
+        )
     except Exception as e:
         logger.error(f"❌ DB Error: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from e
@@ -159,4 +175,36 @@ async def search_pages(q: str):
         return results
     except Exception as e:
         logger.error(f"Search error: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+# ========== CRAWL HISTORY ENDPOINTS ==========
+
+
+@app.get("/api/crawls", response_model=list[CrawlHistoryItem])
+async def get_user_crawls(current_user: dict = Depends(get_current_user)):
+    """Get all crawls for the authenticated user."""
+    try:
+        crawls = await db.get_user_crawls(current_user["user_id"])
+        return crawls
+    except Exception as e:
+        logger.error(f"Error fetching crawls: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@app.delete("/api/crawl/{crawl_id}")
+async def delete_crawl(crawl_id: str, current_user: dict = Depends(get_current_user)):
+    """Delete a crawl (only if owned by the user)."""
+    try:
+        deleted = await db.delete_crawl(crawl_id, current_user["user_id"])
+        if not deleted:
+            raise HTTPException(
+                status_code=404,
+                detail="Crawl not found or you don't have permission to delete it",
+            )
+        return {"message": "Crawl deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting crawl: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from e

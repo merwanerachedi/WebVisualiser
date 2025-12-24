@@ -45,12 +45,134 @@ class Neo4jDatabase:
             await session.run(
                 "CREATE CONSTRAINT crawl_id_unique IF NOT EXISTS FOR (c:Crawl) REQUIRE c.crawl_id IS UNIQUE"
             )
+            await session.run(
+                "CREATE CONSTRAINT user_email_unique IF NOT EXISTS FOR (u:User) REQUIRE u.email IS UNIQUE"
+            )
             await session.run("CREATE INDEX page_domain IF NOT EXISTS FOR (p:Page) ON (p.domain)")
 
             # Note: L'index vectoriel doit être créé manuellement (ce que tu as déjà fait)
 
-    async def create_crawl(self, crawl_id: str, root_url: str, max_depth: int = 3):
+    # ========== USER METHODS ==========
+
+    async def create_user(self, user_id: str, email: str, password_hash: str):
+        """Create a new user in the database."""
         async with self.driver.session() as session:
+            query = """
+                CREATE (u:User {
+                    user_id: $user_id,
+                    email: $email,
+                    password_hash: $password_hash,
+                    created_at: datetime()
+                })
+                RETURN u.user_id as user_id, u.email as email, u.created_at as created_at
+            """
+            result = await session.run(query, user_id=user_id, email=email, password_hash=password_hash)
+            record = await result.single()
+            if record:
+                return {
+                    "user_id": record["user_id"],
+                    "email": record["email"],
+                    "created_at": record["created_at"].to_native(),
+                }
+            return None
+
+    async def get_user_by_email(self, email: str):
+        """Get a user by their email address."""
+        async with self.driver.session() as session:
+            query = """
+                MATCH (u:User {email: $email})
+                RETURN u.user_id as user_id, u.email as email,
+                       u.password_hash as password_hash, u.created_at as created_at
+            """
+            result = await session.run(query, email=email)
+            record = await result.single()
+            if record:
+                return {
+                    "user_id": record["user_id"],
+                    "email": record["email"],
+                    "password_hash": record["password_hash"],
+                    "created_at": record["created_at"].to_native(),
+                }
+            return None
+
+    async def get_user_by_id(self, user_id: str):
+        """Get a user by their ID."""
+        async with self.driver.session() as session:
+            query = """
+                MATCH (u:User {user_id: $user_id})
+                RETURN u.user_id as user_id, u.email as email, u.created_at as created_at
+            """
+            result = await session.run(query, user_id=user_id)
+            record = await result.single()
+            if record:
+                return {
+                    "user_id": record["user_id"],
+                    "email": record["email"],
+                    "created_at": record["created_at"].to_native(),
+                }
+            return None
+
+    async def get_user_crawls(self, user_id: str):
+        """Get all crawls for a specific user."""
+        async with self.driver.session() as session:
+            query = """
+                MATCH (u:User {user_id: $user_id})-[:OWNS]->(c:Crawl)
+                RETURN c.crawl_id as crawl_id, c.root_url as root_url, c.status as status,
+                       c.started_at as started_at, c.completed_at as completed_at,
+                       c.pages_crawled as pages_crawled, c.links_found as links_found,
+                       c.crawl_mode as crawl_mode, c.algorithm as algorithm
+                ORDER BY c.started_at DESC
+            """
+            result = await session.run(query, user_id=user_id)
+            crawls = []
+            async for record in result:
+                crawls.append(
+                    {
+                        "crawl_id": record["crawl_id"],
+                        "root_url": record["root_url"],
+                        "status": record["status"],
+                        "started_at": record["started_at"].to_native() if record["started_at"] else None,
+                        "completed_at": record["completed_at"].to_native() if record["completed_at"] else None,
+                        "pages_crawled": record["pages_crawled"] or 0,
+                        "links_found": record["links_found"] or 0,
+                        "crawl_mode": record["crawl_mode"] or "INTERNAL",
+                        "algorithm": record["algorithm"] or "BFS",
+                    }
+                )
+            return crawls
+
+    async def delete_crawl(self, crawl_id: str, user_id: str):
+        """Delete a crawl and verify ownership."""
+        async with self.driver.session() as session:
+            # First verify ownership
+            check_query = """
+                MATCH (u:User {user_id: $user_id})-[:OWNS]->(c:Crawl {crawl_id: $crawl_id})
+                RETURN c
+            """
+            check_result = await session.run(check_query, user_id=user_id, crawl_id=crawl_id)
+            if not await check_result.single():
+                return False
+
+            # Delete crawl and its relationships
+            delete_query = """
+                MATCH (c:Crawl {crawl_id: $crawl_id})
+                OPTIONAL MATCH (c)-[r:CRAWLED]->(p:Page)
+                DELETE r, c
+            """
+            await session.run(delete_query, crawl_id=crawl_id)
+            return True
+
+    async def create_crawl(
+        self,
+        crawl_id: str,
+        root_url: str,
+        max_depth: int = 3,
+        user_id: str = None,
+        crawl_mode: str = "INTERNAL",
+        algorithm: str = "BFS",
+    ):
+        async with self.driver.session() as session:
+            # Create crawl node
             query = """
                 CREATE (c:Crawl {
                     crawl_id: $crawl_id,
@@ -59,12 +181,34 @@ class Neo4jDatabase:
                     status: 'running',
                     max_depth: $max_depth,
                     pages_crawled: 0,
-                    links_found: 0
+                    links_found: 0,
+                    crawl_mode: $crawl_mode,
+                    algorithm: $algorithm
                 })
                 RETURN c
             """
-            result = await session.run(query, crawl_id=crawl_id, root_url=root_url, max_depth=max_depth)
-            return await result.single()
+            result = await session.run(
+                query,
+                crawl_id=crawl_id,
+                root_url=root_url,
+                max_depth=max_depth,
+                crawl_mode=crawl_mode,
+                algorithm=algorithm,
+            )
+            crawl = await result.single()
+
+            # If user is logged in, create OWNS relationship
+            if user_id:
+                await session.run(
+                    """
+                    MATCH (u:User {user_id: $user_id}), (c:Crawl {crawl_id: $crawl_id})
+                    CREATE (u)-[:OWNS]->(c)
+                    """,
+                    user_id=user_id,
+                    crawl_id=crawl_id,
+                )
+
+            return crawl
 
     # ✅ MODIFICATION : On ajoute un argument optionnel "text_content"
     async def create_or_update_page(self, url: str, page_data: dict, text_content: str = None):

@@ -15,3 +15,6 @@ aiohttp[speedups]
 fake-useragent==1.4.0
 sentence-transformers>=3.0.0
 ruff>=0.8.0
+passlib==1.7.4
+bcrypt==3.2.2
+python-jose[cryptography]==3.3.0
