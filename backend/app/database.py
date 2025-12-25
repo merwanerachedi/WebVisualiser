@@ -385,6 +385,27 @@ class Neo4jDatabase:
                 results.append({"url": record["url"], "title": record["title"], "score": record["score"]})
             return results
 
+    # ========== PAGE SUMMARIZATION METHODS ==========
+
+    async def get_page_summary(self, url: str) -> str | None:
+        """Récupère le résumé en cache d'une page."""
+        async with self.driver.session() as session:
+            result = await session.run(
+                "MATCH (p:Page {url: $url}) RETURN p.summary as summary",
+                url=url,
+            )
+            record = await result.single()
+            return record["summary"] if record and record["summary"] else None
+
+    async def save_page_summary(self, url: str, summary: str):
+        """Sauvegarde le résumé d'une page en cache."""
+        async with self.driver.session() as session:
+            await session.run(
+                "MATCH (p:Page {url: $url}) SET p.summary = $summary",
+                url=url,
+                summary=summary,
+            )
+
     async def close(self):
         await self.driver.close()
 

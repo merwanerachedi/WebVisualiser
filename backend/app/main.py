@@ -208,3 +208,32 @@ async def delete_crawl(crawl_id: str, current_user: dict = Depends(get_current_u
     except Exception as e:
         logger.error(f"Error deleting crawl: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+# ========== SUMMARIZATION ENDPOINT ==========
+
+
+@app.post("/api/page/summarize")
+async def summarize_page(url: str):
+    """Generate or retrieve a summary for a page (fetches page on-demand)."""
+    from .summarizer import summarize_url
+
+    try:
+        # 1. Vérifier si un résumé existe déjà en cache
+        existing_summary = await db.get_page_summary(url)
+        if existing_summary:
+            return {"summary": existing_summary, "cached": True}
+
+        # 2. Récupérer la page et générer le résumé (fetch on-demand)
+        summary = await summarize_url(url)
+
+        # 3. Sauvegarder en cache pour les prochaines fois
+        await db.save_page_summary(url, summary)
+
+        return {"summary": summary, "cached": False}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error summarizing page: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
