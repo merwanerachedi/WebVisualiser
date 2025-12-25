@@ -198,34 +198,11 @@ class WebCrawler:
                     title_tag = soup.find("title")
                     page_data.title = title_tag.string.strip() if title_tag else None
 
-                    # Supprimer les éléments non pertinents pour le résumé
-                    for tag in soup(
-                        [
-                            "script",
-                            "style",
-                            "meta",
-                            "noscript",
-                            "header",
-                            "footer",
-                            "nav",
-                            "aside",
-                            "form",
-                            "svg",
-                            "iframe",
-                            "button",
-                            "input",
-                            "select",
-                            "textarea",
-                        ]
-                    ):
-                        tag.decompose()
+                    for script in soup(["script", "style"]):
+                        script.decompose()
 
                     text_content = soup.get_text(separator=" ", strip=True)
-                    # Nettoyer les espaces multiples
-                    import re
-
-                    text_content = re.sub(r"\s+", " ", text_content).strip()
-                    text_content_sample = text_content[:3000]  # Augmenté pour meilleur résumé
+                    text_content_sample = text_content[:2000]
 
                     data_dict = page_data.dict()
                     data_dict.pop("url", None)
