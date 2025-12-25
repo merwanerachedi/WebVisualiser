@@ -178,6 +178,8 @@ class WebCrawler:
                         "content_type": "redirect",
                     }
                     await self.db.create_or_update_page(url, redirect_data)
+                    # ✅ Lier cette page de redirection au crawl
+                    await self.db.link_crawl_to_page(self.crawl_id, url)
                     self.visited_urls.add(final_url)
 
                 parsed_url = urlparse(final_url)
@@ -206,6 +208,8 @@ class WebCrawler:
                     data_dict.pop("url", None)
 
                     await self.db.create_or_update_page(final_url, data_dict, text_content=text_content_sample)
+                    # ✅ Lier cette page au crawl
+                    await self.db.link_crawl_to_page(self.crawl_id, final_url)
 
                     self.pages_crawled += 1
 
@@ -216,9 +220,12 @@ class WebCrawler:
                         await self._extract_links(soup, final_url, depth)
 
                 else:
+                    # Page non-HTML (image, PDF, etc.) ou erreur
                     data_dict = page_data.dict()
                     data_dict.pop("url", None)
                     await self.db.create_or_update_page(final_url, data_dict)
+                    # ✅ Lier cette page (non-HTML) au crawl
+                    await self.db.link_crawl_to_page(self.crawl_id, final_url)
 
                     # ✅ UTILISATION DU THROTTLING
                     await self._broadcast_throttled({"type": "page_discovered", "data": page_data.dict()})
@@ -259,6 +266,8 @@ class WebCrawler:
                     "title": anchor_text or f"Link from {urlparse(current_url).path}",
                 },
             )
+            # ✅ Lier cette page découverte au crawl
+            await self.db.link_crawl_to_page(self.crawl_id, target_url)
 
             await self.db.create_link(
                 source_url=current_url,

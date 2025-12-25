@@ -276,6 +276,20 @@ class Neo4jDatabase:
             """
             await session.run(query, source_url=source_url, target_url=target_url, **link_data)
 
+    async def link_crawl_to_page(self, crawl_id: str, page_url: str):
+        """
+        Crée la relation [:CRAWLED] entre un Crawl et une Page.
+        Cette relation permet de savoir quelles pages appartiennent à quel crawl.
+        """
+        async with self.driver.session() as session:
+            query = """
+                MATCH (c:Crawl {crawl_id: $crawl_id})
+                MATCH (p:Page {url: $page_url})
+                MERGE (c)-[:CRAWLED]->(p)
+            """
+            await session.run(query, crawl_id=crawl_id, page_url=page_url)
+
+
     async def update_redirect_link(self, source_url, old_target, final_target, crawl_id):
         # (Garde ton code précédent ici)
         async with self.driver.session() as session:
@@ -313,12 +327,17 @@ class Neo4jDatabase:
             )
 
     async def get_crawl_graph(self, crawl_id: str):
-        # (Garde ton code précédent ici)
+        """Récupère le graphe d'un crawl en filtrant les pages de redirection."""
         async with self.driver.session() as session:
-            result = await session.run(
-                "MATCH (c:Crawl {crawl_id: $crawl_id})-[:CRAWLED]->(p:Page) OPTIONAL MATCH (p)-[r:LINKS_TO]->(target:Page) RETURN p, r, target",
-                crawl_id=crawl_id,
-            )
+            # Filtrer les pages avec content_type = 'redirect'
+            query = """
+                MATCH (c:Crawl {crawl_id: $crawl_id})-[:CRAWLED]->(p:Page)
+                WHERE p.status_code <> 301
+                OPTIONAL MATCH (p)-[r:LINKS_TO]->(target:Page)
+                WHERE target.status_code <> 301
+                RETURN p, r, target
+            """
+            result = await session.run(query, crawl_id=crawl_id)
             nodes = []
             edges = []
             seen_nodes = set()

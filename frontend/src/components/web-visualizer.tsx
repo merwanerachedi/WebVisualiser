@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef, useCallback } from "react"
+import { useSearchParams } from "next/navigation"
 import { Starfield } from "./visualizer/starfield"
 import { CrawlControls } from "./visualizer/crawl-controls"
 import { SearchPanel } from "./visualizer/search-panel"
@@ -10,15 +11,21 @@ import { GraphCanvas } from "./visualizer/graph-canvas"
 import { DraggableWindow } from "./visualizer/draggable-window"
 import type { Node, Link, WebSocketMessage, CrawlConfig, SearchResult } from "./visualizer/types"
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+
 const normalizeUrl = (url: string | undefined) => {
   if (!url) return ""
   return url.endsWith("/") ? url.slice(0, -1) : url
 }
 
 export default function WebVisualizer() {
+  const searchParams = useSearchParams()
+  const crawlIdFromUrl = searchParams.get("crawl_id")
+
   const [url, setUrl] = useState("")
   const [isConnected, setIsConnected] = useState(false)
   const [isCrawling, setIsCrawling] = useState(false)
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false)
 
   const [nodes, setNodes] = useState<Node[]>([])
   const [links, setLinks] = useState<Link[]>([])
@@ -48,6 +55,54 @@ export default function WebVisualizer() {
   const wsRef = useRef<WebSocket | null>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const fgRef = useRef<any>(null)
+
+  // ✅ Charger un graphe depuis l'historique si crawl_id dans l'URL
+  useEffect(() => {
+    if (crawlIdFromUrl) {
+      loadGraphFromHistory(crawlIdFromUrl)
+    }
+  }, [crawlIdFromUrl])
+
+  const loadGraphFromHistory = async (crawlId: string) => {
+    setIsLoadingHistory(true)
+    try {
+      const response = await fetch(`${API_URL}/api/crawl/${crawlId}/graph`, {
+        credentials: "include",
+      })
+      if (response.ok) {
+        const data = await response.json()
+
+        // Convertir les données de l'API en format attendu
+        const loadedNodes: Node[] = data.nodes.map((n: { id: string; label: string; status: number }) => ({
+          id: n.id,
+          url: n.id,
+          title: n.label,
+          status: n.status > 0 ? "crawled" : "discovered",
+        }))
+
+        const loadedLinks: Link[] = data.edges.map((e: { source: string; target: string }) => ({
+          source: e.source,
+          target: e.target,
+        }))
+
+        setNodes(loadedNodes)
+        setLinks(loadedLinks)
+        setCrawlCompleted(true)
+
+        // Zoomer sur le graphe après chargement
+        setTimeout(() => {
+          if (fgRef.current) {
+            fgRef.current.zoomToFit(1000, 50)
+          }
+        }, 500)
+      }
+    } catch (error) {
+      console.error("Failed to load graph from history:", error)
+    } finally {
+      setIsLoadingHistory(false)
+    }
+  }
+
 
   const handleNodeHover = (node: Node | null) => {
     setHoverNode(node || null)
