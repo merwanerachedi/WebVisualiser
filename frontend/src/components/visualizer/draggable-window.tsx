@@ -67,7 +67,7 @@ export function DraggableWindow({
   return (
     <div
       ref={windowRef}
-      className="absolute z-20 rounded-xl border border-white/20 bg-black/80 shadow-2xl backdrop-blur-sm"
+      className="absolute z-20 rounded-xl border border-violet-500/20 bg-black/90 shadow-2xl backdrop-blur-xl"
       style={{
         left: `${position.x}px`,
         top: `${position.y}px`,
@@ -75,21 +75,27 @@ export function DraggableWindow({
         cursor: isDragging ? "grabbing" : "default",
       }}
     >
+      {/* Subtle violet gradient overlay */}
+      <div className="absolute inset-0 bg-gradient-to-br from-violet-500/5 via-transparent to-purple-500/5 rounded-xl pointer-events-none" />
+
       {/* Title Bar */}
       <div
-        className="flex items-center justify-between rounded-t-xl bg-white/10 px-4 py-2 cursor-grab active:cursor-grabbing"
+        className="relative flex items-center justify-between rounded-t-xl bg-violet-950/40 border-b border-violet-500/20 px-4 py-2 cursor-grab active:cursor-grabbing"
         onMouseDown={handleMouseDown}
       >
         <span className="font-mono text-sm font-semibold text-white">{title}</span>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setIsMinimized(!isMinimized)}
-            className="rounded p-1 text-white/70 hover:bg-white/10 hover:text-white"
+            className="rounded p-1 text-white/70 hover:bg-violet-500/20 hover:text-white transition-colors"
           >
             {isMinimized ? <Maximize2 className="h-3 w-3" /> : <Minus className="h-3 w-3" />}
           </button>
           {onClose && (
-            <button onClick={onClose} className="rounded p-1 text-white/70 hover:bg-white/10 hover:text-red-400">
+            <button
+              onClick={onClose}
+              className="rounded p-1 text-white/70 hover:bg-violet-500/20 hover:text-red-400 transition-colors"
+            >
               <X className="h-3 w-3" />
             </button>
           )}
@@ -97,7 +103,7 @@ export function DraggableWindow({
       </div>
 
       {/* Content */}
-      {!isMinimized && <div className="p-4">{children}</div>}
+      {!isMinimized && <div className="relative p-4">{children}</div>}
     </div>
   )
 }

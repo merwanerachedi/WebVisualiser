@@ -9,6 +9,7 @@ import { SettingsPanel } from "./visualizer/settings-panel"
 import { StatsPanel } from "./visualizer/stats-panel"
 import { GraphCanvas } from "./visualizer/graph-canvas"
 import { DraggableWindow } from "./visualizer/draggable-window"
+import { NodeDetailsWindow } from "./visualizer/node-details-window"
 import type { Node, Link, WebSocketMessage, CrawlConfig, SearchResult } from "./visualizer/types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
@@ -37,7 +38,7 @@ export default function WebVisualizer() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [highlightLinks, setHighlightLinks] = useState(new Set<any>())
 
-
+  const [clickedNode, setClickedNode] = useState<Node | null>(null)
 
   const [showSettings, setShowSettings] = useState(false)
   const [config, setConfig] = useState<CrawlConfig>({
@@ -56,7 +57,8 @@ export default function WebVisualizer() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const fgRef = useRef<any>(null)
 
-  // ✅ Charger un graphe depuis l'historique si crawl_id dans l'URL
+  const [selectedNode, setSelectedNode] = useState<Node | null>(null)
+
   useEffect(() => {
     if (crawlIdFromUrl) {
       loadGraphFromHistory(crawlIdFromUrl)
@@ -103,7 +105,6 @@ export default function WebVisualizer() {
     }
   }
 
-
   const handleNodeHover = (node: Node | null) => {
     setHoverNode(node || null)
     const newHighlightNodes = new Set<string>()
@@ -124,6 +125,11 @@ export default function WebVisualizer() {
     setHighlightNodes(newHighlightNodes)
     setHighlightLinks(newHighlightLinks)
   }
+
+  const handleNodeClick = useCallback((node: Node, screenX: number, screenY: number) => {
+    setClickedNode(node)
+    setSelectedNode(node)
+  }, [])
 
   const handleSearch = useCallback(async () => {
     if (!searchQuery.trim()) return
@@ -177,7 +183,7 @@ export default function WebVisualizer() {
 
       const ws = new WebSocket(`ws://localhost:8000/ws/${crawlId}`)
 
-      // ✅ Variable pour stocker l'intervalle de ping
+      // Variable pour stocker l'intervalle de ping
       let pingInterval: NodeJS.Timeout | null = null
 
       ws.onopen = () => {
@@ -186,7 +192,7 @@ export default function WebVisualizer() {
         setNodes([{ id: cleanSeedUrl, url: cleanSeedUrl, status: "discovered", x: 0, y: 0 }])
         setLinks([])
 
-        // ✅ Envoyer un ping toutes les 20 secondes pour garder la connexion vivante
+        // Envoyer un ping toutes les 20 secondes pour garder la connexion vivante
         pingInterval = setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) {
             ws.send("ping")
@@ -195,7 +201,7 @@ export default function WebVisualizer() {
       }
 
       ws.onmessage = (event) => {
-        //Ignorer les réponses "pong" du serveur
+        // Ignorer les réponses "pong" du serveur
         if (event.data === "pong") return
 
         try {
@@ -332,6 +338,8 @@ export default function WebVisualizer() {
     setUrl("")
     setSearchQuery("")
     setCrawlCompleted(false)
+    setClickedNode(null)
+    setSelectedNode(null)
   }, [handleStopCrawl])
 
   useEffect(() => {
@@ -348,8 +356,8 @@ export default function WebVisualizer() {
 
   const stats = {
     discovered: nodes.length,
-    crawled: nodes.filter(n => n.status === "crawled").length,
-    links: links.length
+    crawled: nodes.filter((n) => n.status === "crawled").length,
+    links: links.length,
   }
 
   return (
@@ -363,10 +371,33 @@ export default function WebVisualizer() {
         seedUrl={url}
         fgRef={fgRef}
         onNodeHover={handleNodeHover}
+        onNodeClick={handleNodeClick}
         hoverNode={hoverNode}
         highlightNodes={highlightNodes}
         highlightLinks={highlightLinks}
+        clickedNode={clickedNode}
       />
+
+      {selectedNode && (
+        <DraggableWindow
+          title="Page Details"
+          defaultPosition={{ x: window.innerWidth / 2 - 200, y: window.innerHeight / 2 - 200 }}
+          width={450}
+          onClose={() => {
+            setClickedNode(null)
+            setSelectedNode(null)
+          }}
+        >
+          <NodeDetailsWindow
+            nodeUrl={selectedNode.url}
+            nodeTitle={selectedNode.title}
+            onClose={() => {
+              setClickedNode(null)
+              setSelectedNode(null)
+            }}
+          />
+        </DraggableWindow>
+      )}
 
       <DraggableWindow title="Controls" defaultPosition={{ x: 50, y: 30 }} width={500}>
         <CrawlControls

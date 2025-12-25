@@ -16,19 +16,28 @@ export function Navbar() {
     const { user, isAuthenticated, logout, isLoading } = useAuth()
 
     return (
-        <nav className="fixed top-0 left-0 right-0 z-50 border-b border-white/10 bg-black/50 backdrop-blur-xl">
-            <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4">
+        <nav className="fixed top-0 left-0 right-0 z-50 border-b border-white/10 bg-gradient-to-r from-slate-900/95 via-slate-900/90 to-slate-800/95 backdrop-blur-2xl shadow-lg">
+            <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
                 {/* Logo & Title */}
-                <Link href="/" className="flex items-center gap-2 transition-opacity hover:opacity-80">
-                    <Globe className="h-6 w-6 text-cyan-400" />
-                    <span className="text-lg font-semibold text-white">Web Visualizer</span>
+                <Link href="/" className="flex items-center gap-3 group transition-all">
+                    <div className="relative">
+                        <div className="absolute inset-0 bg-gradient-to-r from-violet-500 to-purple-500 rounded-lg blur-lg opacity-50 group-hover:opacity-75 transition-opacity" />
+                        <Globe className="relative h-7 w-7 text-violet-400 group-hover:text-violet-300 transition-colors" />
+                    </div>
+                    <span className="text-xl font-bold bg-gradient-to-r from-violet-400 via-purple-400 to-fuchsia-400 bg-clip-text text-transparent">
+                        Web Visualizer
+                    </span>
                 </Link>
 
                 {/* Navigation Links */}
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-3">
                     {isAuthenticated && (
                         <Link href="/history">
-                            <Button variant="ghost" size="sm" className="text-gray-300 hover:text-white">
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-slate-300 hover:text-white hover:bg-white/10 transition-all"
+                            >
                                 <History className="mr-2 h-4 w-4" />
                                 History
                             </Button>
@@ -37,21 +46,25 @@ export function Navbar() {
 
                     {/* Auth Section */}
                     {isLoading ? (
-                        <div className="h-8 w-20 animate-pulse rounded bg-gray-800" />
+                        <div className="h-9 w-24 animate-pulse rounded-lg bg-white/10" />
                     ) : isAuthenticated ? (
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="sm" className="text-gray-300 hover:text-white">
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-slate-300 hover:text-white hover:bg-white/10 border border-white/10 transition-all"
+                                >
                                     <User className="mr-2 h-4 w-4" />
                                     {user?.email?.split("@")[0]}
                                 </Button>
                             </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-48">
-                                <DropdownMenuItem className="text-gray-400" disabled>
+                            <DropdownMenuContent align="end" className="w-48 bg-slate-900/95 backdrop-blur-xl border-white/10">
+                                <DropdownMenuItem className="text-slate-400" disabled>
                                     {user?.email}
                                 </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem onClick={logout} className="text-red-400">
+                                <DropdownMenuSeparator className="bg-white/10" />
+                                <DropdownMenuItem onClick={logout} className="text-red-400 focus:text-red-300 focus:bg-red-500/10">
                                     <LogOut className="mr-2 h-4 w-4" />
                                     Log out
                                 </DropdownMenuItem>
@@ -60,14 +73,18 @@ export function Navbar() {
                     ) : (
                         <div className="flex items-center gap-2">
                             <Link href="/login">
-                                <Button variant="ghost" size="sm" className="text-gray-300 hover:text-white">
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-slate-300 hover:text-white hover:bg-white/10 transition-all"
+                                >
                                     Log in
                                 </Button>
                             </Link>
                             <Link href="/register">
                                 <Button
                                     size="sm"
-                                    className="bg-gradient-to-r from-cyan-500 to-blue-500 text-white hover:from-cyan-600 hover:to-blue-600"
+                                    className="relative overflow-hidden bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white font-medium shadow-lg shadow-violet-500/25 transition-all"
                                 >
                                     Sign up
                                 </Button>

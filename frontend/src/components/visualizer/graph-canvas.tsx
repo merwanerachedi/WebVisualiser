@@ -5,7 +5,6 @@ import { useEffect, useState, useMemo } from "react"
 import dynamic from "next/dynamic"
 import type { Node, Link } from "./types"
 
-// Node enrichi avec les coordonnées D3 (x, y)
 interface GraphNode extends Node {
   x: number
   y: number
@@ -24,10 +23,12 @@ interface GraphCanvasProps {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   fgRef: React.MutableRefObject<any>
   onNodeHover: (node: Node | null) => void
+  onNodeClick: (node: Node, screenX: number, screenY: number) => void
   hoverNode: Node | null
   highlightNodes: Set<string>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   highlightLinks: Set<any>
+  clickedNode: Node | null
 }
 
 const normalizeUrl = (url: string | undefined) => {
@@ -42,9 +43,11 @@ export function GraphCanvas({
   seedUrl,
   fgRef,
   onNodeHover,
+  onNodeClick,
   hoverNode,
   highlightNodes,
   highlightLinks,
+  clickedNode,
 }: GraphCanvasProps) {
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 })
 
@@ -57,6 +60,12 @@ export function GraphCanvas({
 
   const graphData = useMemo(() => ({ nodes, links }), [nodes, links])
 
+  const handleNodeClick = (node: GraphNode, event: MouseEvent) => {
+    if (fgRef.current && node.x !== undefined && node.y !== undefined) {
+      onNodeClick(node as Node, event.clientX, event.clientY)
+    }
+  }
+
   return (
     <div className="absolute inset-0 z-10">
       <ForceGraph2D
@@ -65,7 +74,7 @@ export function GraphCanvas({
         height={dimensions.height}
         graphData={graphData}
         onNodeHover={onNodeHover}
-        onNodeClick={(node) => window.open(String(node.id), "_blank")}
+        onNodeClick={handleNodeClick}
         cooldownTicks={100}
         d3VelocityDecay={0.3}
         d3AlphaDecay={0.02}
@@ -76,13 +85,11 @@ export function GraphCanvas({
         linkDirectionalParticles={hoverNode ? 0 : 2}
         linkDirectionalParticleWidth={2}
         linkDirectionalParticleSpeed={0.005}
-        // CORRECTION 2 : Typage des arguments node, ctx et globalScale
         nodeCanvasObject={(node: GraphNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
-          // On vérifie que x et y existent bien (sécurité TypeScript + Runtime)
           if (!Number.isFinite(node.x) || !Number.isFinite(node.y)) return
 
           const isSearchActive = Object.keys(searchScores).length > 0
-          const isDimmed = hoverNode && !highlightNodes.has(node.id)
+          const isDimmed = clickedNode ? node.id !== clickedNode.id : hoverNode && !highlightNodes.has(node.id)
           const globalAlpha = isDimmed ? 0.1 : 1
 
           ctx.save()
@@ -98,11 +105,12 @@ export function GraphCanvas({
           if (isSearchActive) {
             fillStyle = "rgba(255, 255, 255, 0.2)"
             if (score !== undefined) {
-              if (score > 0.75) fillStyle = "#166534"
-              else if (score > 0.45) fillStyle = "#dc2626"
+              if (score > 0.75)
+                fillStyle = "#8b5cf6" // violet-500 for high relevance
+              else if (score > 0.45) fillStyle = "#ec4899" // pink-500 for medium relevance
             }
           } else {
-            fillStyle = isCrawled ? "#4ade80" : "#94a3b8"
+            fillStyle = isCrawled ? "#8b5cf6" : "#94a3b8" // violet-500 for crawled, slate-400 for pending
           }
 
           try {
@@ -111,14 +119,14 @@ export function GraphCanvas({
 
             if (isSearchActive) {
               if (score !== undefined && score > 0.75) {
-                gradient.addColorStop(0, "rgba(22, 101, 52, 0.8)")
+                gradient.addColorStop(0, "rgba(139, 92, 246, 0.9)") // violet glow
               } else if (score !== undefined && score > 0.45) {
-                gradient.addColorStop(0, "rgba(220, 38, 38, 0.8)")
+                gradient.addColorStop(0, "rgba(236, 72, 153, 0.8)") // pink glow
               } else {
                 gradient.addColorStop(0, "rgba(100, 100, 100, 0.1)")
               }
             } else {
-              gradient.addColorStop(0, isCrawled ? "rgba(74, 222, 128, 0.6)" : "rgba(148, 163, 184, 0.4)")
+              gradient.addColorStop(0, isCrawled ? "rgba(139, 92, 246, 0.8)" : "rgba(148, 163, 184, 0.5)")
             }
 
             gradient.addColorStop(1, "rgba(0, 0, 0, 0)")
