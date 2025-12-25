@@ -1,3 +1,4 @@
+import { Suspense } from "react"
 import WebVisualizer from "../components/web-visualizer"
 
 export const metadata = {
@@ -6,5 +7,9 @@ export const metadata = {
 }
 
 export default function Page() {
-  return <WebVisualizer />
+  return (
+    <Suspense fallback={<div className="h-screen w-screen bg-black" />}>
+      <WebVisualizer />
+    </Suspense>
+  )
 }

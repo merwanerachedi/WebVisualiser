@@ -289,7 +289,6 @@ class Neo4jDatabase:
             """
             await session.run(query, crawl_id=crawl_id, page_url=page_url)
 
-
     async def update_redirect_link(self, source_url, old_target, final_target, crawl_id):
         # (Garde ton code précédent ici)
         async with self.driver.session() as session:
