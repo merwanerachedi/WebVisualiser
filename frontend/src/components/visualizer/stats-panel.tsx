@@ -11,7 +11,7 @@ interface StatsPanelProps {
 
 export function StatsPanel({ stats, isConnected }: StatsPanelProps) {
   return (
-    <div className="absolute right-8 top-8 z-20 pointer-events-none">
+    <div className="absolute right-8 top-24 z-20 pointer-events-none">
       <div className="relative rounded-xl border border-violet-500/20 bg-black/90 p-4 backdrop-blur-xl pointer-events-auto overflow-hidden">
         {/* Subtle violet gradient overlay */}
         <div className="absolute inset-0 bg-gradient-to-br from-violet-500/5 via-transparent to-purple-500/5 pointer-events-none" />

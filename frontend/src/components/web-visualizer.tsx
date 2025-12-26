@@ -361,7 +361,7 @@ export default function WebVisualizer() {
   }
 
   return (
-    <div className="relative h-[calc(100vh-56px)] w-full bg-black overflow-hidden">
+    <div className="relative h-screen w-full bg-black overflow-hidden">
       <Starfield />
 
       <GraphCanvas
@@ -399,7 +399,7 @@ export default function WebVisualizer() {
         </DraggableWindow>
       )}
 
-      <DraggableWindow title="Controls" defaultPosition={{ x: 50, y: 30 }} width={500}>
+      <DraggableWindow title="Controls" defaultPosition={{ x: 50, y: 90 }} width={500}>
         <CrawlControls
           url={url}
           setUrl={setUrl}
@@ -417,7 +417,7 @@ export default function WebVisualizer() {
       {showSettings && (
         <DraggableWindow
           title="Settings"
-          defaultPosition={{ x: 50, y: 210 }}
+          defaultPosition={{ x: 50, y: 270 }}
           width={400}
           onClose={() => setShowSettings(false)}
         >
@@ -426,7 +426,7 @@ export default function WebVisualizer() {
       )}
 
       {crawlCompleted && (
-        <DraggableWindow title="Search" defaultPosition={{ x: 50, y: 380 }} width={500}>
+        <DraggableWindow title="Search" defaultPosition={{ x: 50, y: 440 }} width={500}>
           <SearchPanel
             searchQuery={searchQuery}
             setSearchQuery={setSearchQuery}

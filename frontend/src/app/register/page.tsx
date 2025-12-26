@@ -45,22 +45,14 @@ export default function RegisterPage() {
     }
 
     return (
-        <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950">
-            {/* Background effect */}
-            <div className="absolute inset-0 overflow-hidden">
+        <div className="min-h-screen relative">
+            {/* Background - covers entire screen including behind navbar */}
+            <div className="absolute inset-0 bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950">
                 <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-900/10 via-transparent to-transparent" />
             </div>
 
-            <div className="relative z-10 w-full max-w-md px-4">
-                {/* Back link */}
-                <Link
-                    href="/"
-                    className="mb-8 inline-flex items-center text-sm text-gray-400 transition-colors hover:text-cyan-400"
-                >
-                    <ArrowLeft className="mr-2 h-4 w-4" />
-                    Back to home
-                </Link>
-
+            {/* Content with pt-24 for navbar spacing */}
+            <div className="relative z-10 flex flex-col min-h-screen items-center justify-center pt-24 w-full max-w-md mx-auto px-4">
                 {/* Card */}
                 <div className="rounded-xl border border-white/10 bg-gray-900/50 p-8 backdrop-blur-xl">
                     {/* Header */}
@@ -143,6 +135,15 @@ export default function RegisterPage() {
                         </Link>
                     </p>
                 </div>
+
+                {/* Back link */}
+                <Link
+                    href="/"
+                    className="mt-8 inline-flex items-center text-sm text-gray-400 transition-colors hover:text-cyan-400"
+                >
+                    <ArrowLeft className="mr-2 h-4 w-4" />
+                    Back to home
+                </Link>
             </div>
         </div>
     )

@@ -5,12 +5,25 @@ import "./globals.css"
 import { AuthProvider } from "@/lib/auth-context"
 import { Navbar } from "@/components/navbar"
 
-import { Geist as V0_Font_Geist, Geist_Mono as V0_Font_Geist_Mono, Source_Serif_4 as V0_Font_Source_Serif_4 } from 'next/font/google'
+import {
+  Geist as V0_Font_Geist,
+  Geist_Mono as V0_Font_Geist_Mono,
+  Source_Serif_4 as V0_Font_Source_Serif_4,
+} from "next/font/google"
 
 // Initialize fonts
-const _geist = V0_Font_Geist({ subsets: ['latin'], weight: ["100", "200", "300", "400", "500", "600", "700", "800", "900"] })
-const _geistMono = V0_Font_Geist_Mono({ subsets: ['latin'], weight: ["100", "200", "300", "400", "500", "600", "700", "800", "900"] })
-const _sourceSerif_4 = V0_Font_Source_Serif_4({ subsets: ['latin'], weight: ["200", "300", "400", "500", "600", "700", "800", "900"] })
+const _geist = V0_Font_Geist({
+  subsets: ["latin"],
+  weight: ["100", "200", "300", "400", "500", "600", "700", "800", "900"],
+})
+const _geistMono = V0_Font_Geist_Mono({
+  subsets: ["latin"],
+  weight: ["100", "200", "300", "400", "500", "600", "700", "800", "900"],
+})
+const _sourceSerif_4 = V0_Font_Source_Serif_4({
+  subsets: ["latin"],
+  weight: ["200", "300", "400", "500", "600", "700", "800", "900"],
+})
 
 export const metadata: Metadata = {
   title: "Web Visualizer",
@@ -45,9 +58,7 @@ export default function RootLayout({
       <body className="font-sans antialiased">
         <AuthProvider>
           <Navbar />
-          <main className="pt-14">
-            {children}
-          </main>
+          <main>{children}</main>
         </AuthProvider>
         <Analytics />
       </body>
