@@ -14,6 +14,7 @@ from .auth_routes import router as auth_router
 from .crawler import WebCrawler
 from .database import db
 from .models import CrawlHistoryItem, CrawlRequest, CrawlResponse
+from .redis_cache import cache
 from .websocket import ConnectionManager
 
 logging.basicConfig(level=logging.INFO)
@@ -23,7 +24,7 @@ app = FastAPI(title="Web Crawler API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origins=["http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -39,14 +40,17 @@ active_crawlers = {}
 
 @app.on_event("startup")
 async def startup_event():
-    # ✅ Vérification connexion DB au démarrage
+    # Vérification connexion DB au démarrage
     await db.verify_connection()
+    # Connexion Redis
+    await cache.connect()
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    # ✅ Fermeture propre
+    # Fermeture propre
     await db.close()
+    await cache.close()
 
 
 @app.post("/api/crawl", response_model=CrawlResponse)
@@ -215,20 +219,20 @@ async def delete_crawl(crawl_id: str, current_user: dict = Depends(get_current_u
 
 @app.post("/api/page/summarize")
 async def summarize_page(url: str):
-    """Generate or retrieve a summary for a page (fetches page on-demand)."""
+    # Génerer ou récupérer un résumé pour une page (depuis redis si possible)
     from .summarizer import summarize_url
 
     try:
-        # 1. Vérifier si un résumé existe déjà en cache
-        existing_summary = await db.get_page_summary(url)
-        if existing_summary:
-            return {"summary": existing_summary, "cached": True}
+        # 1. Vérifier si un résumé existe déjà dans Redis
+        cached_summary = await cache.get_summary(url)
+        if cached_summary:
+            return {"summary": cached_summary, "cached": True}
 
         # 2. Récupérer la page et générer le résumé (fetch on-demand)
         summary = await summarize_url(url)
 
-        # 3. Sauvegarder en cache pour les prochaines fois
-        await db.save_page_summary(url, summary)
+        # 3. Sauvegarder dans Redis (TTL: 7 jours)
+        await cache.set_summary(url, summary)
 
         return {"summary": summary, "cached": False}
 
