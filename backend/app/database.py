@@ -142,9 +142,9 @@ class Neo4jDatabase:
             return crawls
 
     async def delete_crawl(self, crawl_id: str, user_id: str):
-        """Delete a crawl and verify ownership."""
+        """Delete a crawl, its relationships, and orphaned pages."""
         async with self.driver.session() as session:
-            # First verify ownership
+            # Vérification de l'ownership
             check_query = """
                 MATCH (u:User {user_id: $user_id})-[:OWNS]->(c:Crawl {crawl_id: $crawl_id})
                 RETURN c
@@ -153,13 +153,23 @@ class Neo4jDatabase:
             if not await check_result.single():
                 return False
 
-            # Delete crawl and its relationships
-            delete_query = """
-                MATCH (c:Crawl {crawl_id: $crawl_id})
-                OPTIONAL MATCH (c)-[r:CRAWLED]->(p:Page)
-                DELETE r, c
+            # Delete des pages uniquement reliées a ce crawl
+            delete_orphan_pages_query = """
+                MATCH (c:Crawl {crawl_id: $crawl_id})-[:CRAWLED]->(p:Page)
+                WHERE NOT EXISTS {
+                    MATCH (other:Crawl)-[:CRAWLED]->(p)
+                    WHERE other.crawl_id <> $crawl_id
+                }
+                DETACH DELETE p
             """
-            await session.run(delete_query, crawl_id=crawl_id)
+            await session.run(delete_orphan_pages_query, crawl_id=crawl_id)
+
+            # Delete du crawl et ses relations
+            delete_crawl_query = """
+                MATCH (c:Crawl {crawl_id: $crawl_id})
+                DETACH DELETE c
+            """
+            await session.run(delete_crawl_query, crawl_id=crawl_id)
             return True
 
     async def create_crawl(
