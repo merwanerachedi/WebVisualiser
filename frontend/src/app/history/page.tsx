@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { useAuth } from "@/lib/auth-context"
+import api from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import {
     Globe,
@@ -39,8 +40,6 @@ interface CrawlHistoryItem {
     algorithm: string
 }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
-
 export default function HistoryPage() {
     const { isAuthenticated, isLoading: authLoading } = useAuth()
     const router = useRouter()
@@ -63,17 +62,10 @@ export default function HistoryPage() {
 
     const fetchCrawls = async () => {
         try {
-            const response = await fetch(`${API_URL}/api/crawls`, {
-                credentials: "include",
-            })
-            if (response.ok) {
-                const data = await response.json()
-                setCrawls(data)
-            } else {
-                setError("Failed to load crawl history")
-            }
+            const response = await api.get("/api/crawls")
+            setCrawls(response.data)
         } catch {
-            setError("Network error")
+            setError("Failed to load crawl history")
         } finally {
             setIsLoading(false)
         }
@@ -82,17 +74,10 @@ export default function HistoryPage() {
     const deleteCrawl = async (crawlId: string) => {
         setDeletingId(crawlId)
         try {
-            const response = await fetch(`${API_URL}/api/crawl/${crawlId}`, {
-                method: "DELETE",
-                credentials: "include",
-            })
-            if (response.ok) {
-                setCrawls(crawls.filter(c => c.crawl_id !== crawlId))
-            } else {
-                setError("Failed to delete crawl")
-            }
+            await api.delete(`/api/crawl/${crawlId}`)
+            setCrawls(crawls.filter(c => c.crawl_id !== crawlId))
         } catch {
-            setError("Network error")
+            setError("Failed to delete crawl")
         } finally {
             setDeletingId(null)
         }

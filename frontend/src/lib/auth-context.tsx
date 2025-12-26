@@ -1,6 +1,7 @@
 "use client"
 
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react"
+import { publicApi } from "./api"
 
 interface User {
     user_id: string
@@ -20,23 +21,15 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
-
 export function AuthProvider({ children }: { children: ReactNode }) {
     const [user, setUser] = useState<User | null>(null)
     const [isLoading, setIsLoading] = useState(true)
 
     const checkAuth = useCallback(async () => {
         try {
-            const response = await fetch(`${API_URL}/api/auth/me`, {
-                credentials: "include",
-            })
-            if (response.ok) {
-                const userData = await response.json()
-                setUser(userData)
-            } else {
-                setUser(null)
-            }
+            // Use publicApi - no interceptor, no redirect loop
+            const response = await publicApi.get("/api/auth/me")
+            setUser(response.data)
         } catch {
             setUser(null)
         } finally {
@@ -50,52 +43,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const login = async (email: string, password: string) => {
         try {
-            const response = await fetch(`${API_URL}/api/auth/login`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                credentials: "include",
-                body: JSON.stringify({ email, password }),
-            })
-
-            if (response.ok) {
-                await checkAuth()
-                return { success: true }
-            } else {
-                const error = await response.json()
-                return { success: false, error: error.detail || "Login failed" }
-            }
-        } catch {
-            return { success: false, error: "Network error" }
+            await publicApi.post("/api/auth/login", { email, password })
+            await checkAuth()
+            return { success: true }
+        } catch (error) {
+            const errorMessage =
+                (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail || "Login failed"
+            return { success: false, error: errorMessage }
         }
     }
 
     const register = async (email: string, password: string) => {
         try {
-            const response = await fetch(`${API_URL}/api/auth/register`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                credentials: "include",
-                body: JSON.stringify({ email, password }),
-            })
-
-            if (response.ok) {
-                // Auto-login after registration
-                return await login(email, password)
-            } else {
-                const error = await response.json()
-                return { success: false, error: error.detail || "Registration failed" }
-            }
-        } catch {
-            return { success: false, error: "Network error" }
+            await publicApi.post("/api/auth/register", { email, password })
+            return await login(email, password)
+        } catch (error) {
+            const errorMessage =
+                (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail ||
+                "Registration failed"
+            return { success: false, error: errorMessage }
         }
     }
 
     const logout = async () => {
         try {
-            await fetch(`${API_URL}/api/auth/logout`, {
-                method: "POST",
-                credentials: "include",
-            })
+            await publicApi.post("/api/auth/logout")
         } catch {
             // Ignore errors
         }

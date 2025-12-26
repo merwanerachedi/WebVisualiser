@@ -2,17 +2,19 @@
 import logging
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
 
 from .auth import (
-    ACCESS_TOKEN_EXPIRE_MINUTES,
+    REFRESH_TOKEN_EXPIRE_DAYS,
     create_access_token,
+    create_refresh_token,
     get_current_user,
     get_password_hash,
     verify_password,
 )
 from .database import db
 from .models import Token, UserCreate, UserLogin, UserResponse
+from .redis_cache import cache
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +24,6 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 @router.post("/register", response_model=UserResponse)
 async def register(user_data: UserCreate):
     """Register a new user."""
-    # Check if user already exists
     existing_user = await db.get_user_by_email(user_data.email)
     if existing_user:
         raise HTTPException(
@@ -30,7 +31,6 @@ async def register(user_data: UserCreate):
             detail="Email already registered",
         )
 
-    # Create user
     user_id = str(uuid.uuid4())
     hashed_password = get_password_hash(user_data.password)
 
@@ -51,7 +51,7 @@ async def register(user_data: UserCreate):
 
 @router.post("/login", response_model=Token)
 async def login(user_data: UserLogin, response: Response):
-    """Login and get access token in HttpOnly cookie."""
+    """Login and get access token + refresh token in HttpOnly cookies."""
     user = await db.get_user_by_email(user_data.email)
     if not user:
         raise HTTPException(
@@ -65,26 +65,103 @@ async def login(user_data: UserLogin, response: Response):
             detail="Invalid email or password",
         )
 
-    # Create access token
+    # Create tokens
     access_token = create_access_token(data={"sub": user["user_id"], "email": user["email"]})
+    refresh_token = create_refresh_token()
 
-    # Set HttpOnly cookie
+    # Store refresh token in Redis
+    await cache.store_refresh_token(user["user_id"], refresh_token)
+
+    # Set HttpOnly cookies
+    # Note: access_token cookie lives as long as refresh_token (1 day)
+    # The JWT inside expires after 15 min, triggering refresh flow
     response.set_cookie(
         key="access_token",
         value=access_token,
         httponly=True,
         secure=False,  # Set to True in production with HTTPS
         samesite="lax",
-        max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        max_age=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,  # Match refresh token duration
+    )
+    response.set_cookie(
+        key="refresh_token",
+        value=f"{user['user_id']}:{refresh_token}",  # Store user_id with token
+        httponly=True,
+        secure=False,
+        samesite="lax",
+        max_age=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
     )
 
     return Token(access_token=access_token, token_type="bearer")
 
 
+@router.post("/refresh")
+async def refresh_token(response: Response, refresh_token: str | None = Cookie(default=None)):
+    """Refresh access token using refresh token."""
+    if not refresh_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="No refresh token",
+        )
+
+    # Parse user_id and token from cookie
+    try:
+        user_id, token = refresh_token.split(":", 1)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token format",
+        ) from ValueError
+
+    # Verify refresh token exists in Redis
+    stored_token = await cache.get_refresh_token(user_id)
+    if not stored_token or stored_token != token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="session_expired",
+        )
+
+    # Get user data for new access token
+    user = await db.get_user_by_id(user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found",
+        )
+
+    # Create new access token
+    new_access_token = create_access_token(data={"sub": user["user_id"], "email": user["email"]})
+    token_preview = f"{new_access_token[:10]}...{new_access_token[-10:]}"
+    logger.info(f"[REFRESH] New access token generated: {token_preview}")
+
+    # Set new access token cookie
+    response.set_cookie(
+        key="access_token",
+        value=new_access_token,
+        httponly=True,
+        secure=False,
+        samesite="lax",
+        max_age=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,  # Match refresh token duration
+    )
+
+    return {"message": "Token refreshed", "access_token": new_access_token}
+
+
 @router.post("/logout")
-async def logout(response: Response):
-    """Logout by clearing the access token cookie."""
+async def logout(response: Response, refresh_token: str | None = Cookie(default=None)):
+    """Logout by clearing cookies and deleting refresh token from Redis."""
+    # Delete refresh token from Redis if exists
+    if refresh_token:
+        try:
+            user_id, _ = refresh_token.split(":", 1)
+            await cache.delete_refresh_token(user_id)
+        except ValueError:
+            pass  # Invalid format, just continue with logout
+
+    # Clear cookies
     response.delete_cookie(key="access_token")
+    response.delete_cookie(key="refresh_token")
+
     return {"message": "Logged out successfully"}
 
 

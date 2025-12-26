@@ -1,7 +1,3 @@
-"""
-Redis cache service for storing page summaries and other cached data.
-"""
-
 import logging
 import os
 
@@ -34,7 +30,7 @@ class RedisCache:
         if self.client:
             await self.client.close()
 
-    # ========== SUMMARY CACHE ==========
+    # --------cache du résumé des pages---------
 
     async def get_summary(self, url: str) -> str | None:
         """Get cached summary for a URL."""
@@ -67,6 +63,45 @@ class RedisCache:
             await self.client.delete(key)
         except Exception as e:
             logger.error(f"Redis delete error: {e}")
+
+    # --------Refresh Token Storage---------
+
+    # TTL for refresh tokens (1 day)
+    REFRESH_TOKEN_TTL = 60 * 60
+
+    async def store_refresh_token(self, user_id: str, token: str):
+        """Store a refresh token for a user with TTL."""
+        if not self.client:
+            return
+        try:
+            key = f"refresh:{user_id}"
+            # Ici le refresh token est stocké avec un TTL de 1 jour
+            await self.client.setex(key, self.REFRESH_TOKEN_TTL, token)
+            logger.info(f"Stored refresh token for user {user_id}")
+        except Exception as e:
+            logger.error(f"Redis store refresh token error: {e}")
+
+    async def get_refresh_token(self, user_id: str) -> str | None:
+        """Get stored refresh token for a user."""
+        if not self.client:
+            return None
+        try:
+            key = f"refresh:{user_id}"
+            return await self.client.get(key)
+        except Exception as e:
+            logger.error(f"Redis get refresh token error: {e}")
+            return None
+
+    async def delete_refresh_token(self, user_id: str):
+        """Delete refresh token (for logout)."""
+        if not self.client:
+            return
+        try:
+            key = f"refresh:{user_id}"
+            await self.client.delete(key)
+            logger.info(f"Deleted refresh token for user {user_id}")
+        except Exception as e:
+            logger.error(f"Redis delete refresh token error: {e}")
 
 
 # Singleton
