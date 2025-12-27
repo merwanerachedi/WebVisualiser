@@ -38,6 +38,8 @@ export default function WebVisualizer() {
   const [highlightNodes, setHighlightNodes] = useState(new Set<string>())
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [highlightLinks, setHighlightLinks] = useState(new Set<any>())
+  const [similarNodes, setSimilarNodes] = useState(new Set<string>())
+  const [hoveredSimilarUrl, setHoveredSimilarUrl] = useState<string | null>(null)
 
   const [clickedNode, setClickedNode] = useState<Node | null>(null)
 
@@ -127,9 +129,32 @@ export default function WebVisualizer() {
     setHighlightLinks(newHighlightLinks)
   }
 
+  const handleSimilarPagesFound = useCallback(
+    (pages: { url: string; title: string | null; score: number }[]) => {
+      // If no pages, reset to normal state
+      if (pages.length === 0) {
+        setSimilarNodes(new Set())
+        return
+      }
+
+      const similar = new Set<string>()
+      pages.forEach((p) => {
+        const normalizedUrl = normalizeUrl(p.url)
+        similar.add(normalizedUrl)
+      })
+      // Also add the selected node itself
+      if (selectedNode) {
+        similar.add(normalizeUrl(selectedNode.url))
+      }
+      setSimilarNodes(similar)
+    },
+    [selectedNode]
+  )
+
   const handleNodeClick = useCallback((node: Node, screenX: number, screenY: number) => {
     setClickedNode(node)
     setSelectedNode(node)
+    setSimilarNodes(new Set()) // Clear similar nodes when clicking a new node
   }, [])
 
   const handleSearch = useCallback(async () => {
@@ -402,6 +427,8 @@ export default function WebVisualizer() {
         highlightNodes={highlightNodes}
         highlightLinks={highlightLinks}
         clickedNode={clickedNode}
+        similarNodes={similarNodes}
+        hoveredSimilarUrl={hoveredSimilarUrl}
       />
 
       {selectedNode && (
@@ -412,6 +439,7 @@ export default function WebVisualizer() {
           onClose={() => {
             setClickedNode(null)
             setSelectedNode(null)
+            setSimilarNodes(new Set()) // Reset graph when closing window
           }}
         >
           <NodeDetailsWindow
@@ -420,7 +448,11 @@ export default function WebVisualizer() {
             onClose={() => {
               setClickedNode(null)
               setSelectedNode(null)
+              setSimilarNodes(new Set())
+              setHoveredSimilarUrl(null)
             }}
+            onSimilarPagesFound={handleSimilarPagesFound}
+            onHoverSimilarPage={(url) => setHoveredSimilarUrl(url ? normalizeUrl(url) : null)}
           />
         </DraggableWindow>
       )}

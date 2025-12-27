@@ -29,6 +29,8 @@ interface GraphCanvasProps {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   highlightLinks: Set<any>
   clickedNode: Node | null
+  similarNodes?: Set<string>
+  hoveredSimilarUrl?: string | null
 }
 
 const normalizeUrl = (url: string | undefined) => {
@@ -48,6 +50,8 @@ export function GraphCanvas({
   highlightNodes,
   highlightLinks,
   clickedNode,
+  similarNodes = new Set(),
+  hoveredSimilarUrl = null,
 }: GraphCanvasProps) {
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 })
 
@@ -79,17 +83,35 @@ export function GraphCanvas({
         d3VelocityDecay={0.3}
         d3AlphaDecay={0.02}
         linkColor={(link) =>
-          hoverNode && !highlightLinks.has(link) ? "rgba(255, 255, 255, 0.05)" : "rgba(255, 255, 255, 0.2)"
+          (hoverNode && !highlightLinks.has(link)) || similarNodes.size > 0 || clickedNode
+            ? "rgba(255, 255, 255, 0.05)"
+            : "rgba(255, 255, 255, 0.2)"
         }
         linkWidth={(link) => (highlightLinks.has(link) ? 2 : 1)}
-        linkDirectionalParticles={hoverNode ? 0 : 2}
+        linkDirectionalParticles={hoverNode || similarNodes.size > 0 || clickedNode ? 0 : 2}
         linkDirectionalParticleWidth={2}
         linkDirectionalParticleSpeed={0.005}
         nodeCanvasObject={(node: GraphNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
           if (!Number.isFinite(node.x) || !Number.isFinite(node.y)) return
 
           const isSearchActive = Object.keys(searchScores).length > 0
-          const isDimmed = clickedNode ? node.id !== clickedNode.id : hoverNode && !highlightNodes.has(node.id)
+          const isSimilarModeActive = similarNodes.size > 0
+          const isSimilarNode = similarNodes.has(node.id)
+          const isHoveredSimilarNode = hoveredSimilarUrl && node.id === hoveredSimilarUrl
+
+          // Determine if node should be dimmed
+          let isDimmed = false
+          if (hoveredSimilarUrl) {
+            // When hovering a result item, only highlight that specific node
+            isDimmed = node.id !== hoveredSimilarUrl
+          } else if (isSimilarModeActive) {
+            isDimmed = !isSimilarNode
+          } else if (clickedNode) {
+            isDimmed = node.id !== clickedNode.id
+          } else if (hoverNode) {
+            isDimmed = !highlightNodes.has(node.id)
+          }
+
           const globalAlpha = isDimmed ? 0.1 : 1
 
           ctx.save()
@@ -102,7 +124,10 @@ export function GraphCanvas({
 
           let fillStyle: string
 
-          if (isSearchActive) {
+          if (isSimilarModeActive && isSimilarNode) {
+            // Similar pages get cyan color
+            fillStyle = "#06b6d4" // cyan-500
+          } else if (isSearchActive) {
             fillStyle = "rgba(255, 255, 255, 0.2)"
             if (score !== undefined) {
               if (score > 0.75)
@@ -117,7 +142,10 @@ export function GraphCanvas({
             const glowSize = 12
             const gradient = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, glowSize)
 
-            if (isSearchActive) {
+            if (isSimilarModeActive && isSimilarNode) {
+              // Cyan glow for similar pages
+              gradient.addColorStop(0, "rgba(6, 182, 212, 0.9)") // cyan glow
+            } else if (isSearchActive) {
               if (score !== undefined && score > 0.75) {
                 gradient.addColorStop(0, "rgba(139, 92, 246, 0.9)") // violet glow
               } else if (score !== undefined && score > 0.45) {

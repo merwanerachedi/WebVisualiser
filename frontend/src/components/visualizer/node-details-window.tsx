@@ -1,23 +1,39 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { ExternalLink, FileText, Loader2 } from "lucide-react"
+import { ExternalLink, FileText, Loader2, Target } from "lucide-react"
 import { Button } from "@/components/ui/button"
+
+interface SimilarPage {
+    url: string
+    title: string | null
+    score: number
+}
 
 interface NodeDetailsWindowProps {
     nodeUrl: string
     nodeTitle?: string
     onClose: () => void
+    onSimilarPagesFound?: (pages: SimilarPage[]) => void
+    onHoverSimilarPage?: (url: string | null) => void
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
-export function NodeDetailsWindow({ nodeUrl, nodeTitle, onClose }: NodeDetailsWindowProps) {
+export function NodeDetailsWindow({
+    nodeUrl,
+    nodeTitle,
+    onClose,
+    onSimilarPagesFound,
+    onHoverSimilarPage,
+}: NodeDetailsWindowProps) {
     const [isLoading, setIsLoading] = useState(false)
+    const [isFindingSimilar, setIsFindingSimilar] = useState(false)
     const [summary, setSummary] = useState<string | null>(null)
     const [error, setError] = useState<string | null>(null)
     const [displayedText, setDisplayedText] = useState("")
     const [isRevealing, setIsRevealing] = useState(false)
+    const [similarPages, setSimilarPages] = useState<SimilarPage[]>([])
 
     const truncateUrl = (url: string, maxLength = 60) => {
         if (url.length <= maxLength) return url
@@ -33,6 +49,8 @@ export function NodeDetailsWindow({ nodeUrl, nodeTitle, onClose }: NodeDetailsWi
         setError(null)
         setSummary(null)
         setDisplayedText("")
+        setSimilarPages([]) // Clear similar pages when summarizing
+        if (onSimilarPagesFound) onSimilarPagesFound([]) // Reset graph highlighting
 
         try {
             const response = await fetch(`${API_URL}/api/page/summarize?url=${encodeURIComponent(nodeUrl)}`, {
@@ -52,6 +70,37 @@ export function NodeDetailsWindow({ nodeUrl, nodeTitle, onClose }: NodeDetailsWi
             setError("Failed to generate summary. Please try again.")
         } finally {
             setIsLoading(false)
+        }
+    }
+
+    const handleFindSimilar = async () => {
+        setIsFindingSimilar(true)
+        setError(null)
+        setSimilarPages([])
+        setSummary(null) // Clear summary when finding similar
+        setDisplayedText("")
+
+        try {
+            const response = await fetch(`${API_URL}/api/page/similar?url=${encodeURIComponent(nodeUrl)}&limit=10`, {
+                credentials: "include",
+            })
+
+            if (!response.ok) {
+                throw new Error("Failed to find similar pages")
+            }
+
+            const data: SimilarPage[] = await response.json()
+            setSimilarPages(data)
+
+            // Notify parent to highlight similar nodes on the graph
+            if (onSimilarPagesFound) {
+                onSimilarPagesFound(data)
+            }
+        } catch (err) {
+            console.error("[v0] Error finding similar pages:", err)
+            setError("Failed to find similar pages. Please try again.")
+        } finally {
+            setIsFindingSimilar(false)
         }
     }
 
@@ -109,6 +158,50 @@ export function NodeDetailsWindow({ nodeUrl, nodeTitle, onClose }: NodeDetailsWi
                     )}
                 </Button>
             </div>
+
+            {/* Similar Pages button */}
+            <Button
+                onClick={handleFindSimilar}
+                disabled={isFindingSimilar}
+                className="w-full bg-gradient-to-r from-cyan-600/90 to-teal-600/90 hover:from-cyan-500 hover:to-teal-500 text-white font-medium transition-all"
+            >
+                {isFindingSimilar ? (
+                    <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Finding similar...
+                    </>
+                ) : (
+                    <>
+                        <Target className="w-4 h-4 mr-2" />
+                        Find Similar Pages
+                    </>
+                )}
+            </Button>
+
+            {/* Similar pages results */}
+            {similarPages.length > 0 && (
+                <div className="bg-cyan-950/30 border border-cyan-500/20 rounded-lg p-3 backdrop-blur-sm max-h-[200px] overflow-y-auto">
+                    <p className="text-xs text-cyan-300 mb-2 font-medium">
+                        {similarPages.length} similar page{similarPages.length > 1 ? "s" : ""} found
+                    </p>
+                    <div className="space-y-2">
+                        {similarPages.map((page, index) => (
+                            <div
+                                key={page.url}
+                                className="flex items-start gap-2 text-xs p-2 rounded bg-cyan-500/10 hover:bg-cyan-500/20 transition-colors cursor-pointer"
+                                onMouseEnter={() => onHoverSimilarPage?.(page.url)}
+                                onMouseLeave={() => onHoverSimilarPage?.(null)}
+                            >
+                                <span className="text-cyan-400 font-mono">{(page.score * 100).toFixed(0)}%</span>
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-white truncate">{page.title || "Untitled"}</p>
+                                    <p className="text-slate-400 truncate text-[10px]">{page.url}</p>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             {/* Summary display with progressive reveal */}
             {summary && (

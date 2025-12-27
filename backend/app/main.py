@@ -259,3 +259,23 @@ async def summarize_page(
     except Exception as e:
         logger.error(f"Error summarizing page: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+# ========== SIMILAR PAGES ENDPOINT ==========
+
+
+@app.get("/api/page/similar")
+async def find_similar_pages(
+    request: Request,
+    url: str,
+    limit: int = 10,
+    _: None = Depends(RateLimiter(limit=10, window=60, key_prefix="similar")),
+):
+    """Find pages with similar content to the given URL using embeddings."""
+    try:
+        similar_pages = await db.find_similar_pages_by_url(url, top_k=limit)
+        return similar_pages
+    except Exception as e:
+        logger.error(f"Error finding similar pages: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+

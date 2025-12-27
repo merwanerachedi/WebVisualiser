@@ -395,9 +395,51 @@ class Neo4jDatabase:
                 results.append({"url": record["url"], "title": record["title"], "score": record["score"]})
             return results
 
+    async def find_similar_pages_by_url(self, url: str, top_k: int = 10, min_score: float = 0.7):
+        """Trouve les pages avec un contenu similaire à une page donnée."""
+        async with self.driver.session() as session:
+            # 1. Récupérer l'embedding de la page source
+            get_embedding_query = """
+                MATCH (p:Page {url: $url})
+                RETURN p.embedding as embedding
+            """
+            result = await session.run(get_embedding_query, url=url)
+            record = await result.single()
+
+            if not record or not record["embedding"]:
+                return []
+
+            source_embedding = record["embedding"]
+
+            # 2. Chercher les pages similaires via l'index vectoriel
+            search_query = """
+                CALL db.index.vector.queryNodes('page_embeddings', $k, $embedding)
+                YIELD node, score
+                WHERE node.url <> $source_url AND score >= $min_score
+                RETURN node.url as url, node.title as title, score
+                ORDER BY score DESC
+            """
+            result = await session.run(
+                search_query,
+                k=top_k + 1,  # +1 car la page source sera incluse
+                embedding=source_embedding,
+                source_url=url,
+                min_score=min_score,
+            )
+
+            results = []
+            async for record in result:
+                results.append({
+                    "url": record["url"],
+                    "title": record["title"],
+                    "score": round(record["score"], 3),
+                })
+            return results
+
     async def close(self):
         await self.driver.close()
 
 
 # Singleton
 db = Neo4jDatabase()
+
