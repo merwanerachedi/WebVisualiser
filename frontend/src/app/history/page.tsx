@@ -106,7 +106,7 @@ export default function HistoryPage() {
     }
 
     return (
-        <div className="min-h-screen relative overflow-hidden">
+        <div className="min-h-screen relative">
             <div className="absolute inset-0 bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950">
                 {/* Animated stars */}
                 <div className="absolute inset-0">

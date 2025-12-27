@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { ExternalLink, FileText, Loader2, Target } from "lucide-react"
+import { ExternalLink, FileText, Loader2, Target, Copy, Check } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 interface SimilarPage {
@@ -34,6 +34,18 @@ export function NodeDetailsWindow({
     const [displayedText, setDisplayedText] = useState("")
     const [isRevealing, setIsRevealing] = useState(false)
     const [similarPages, setSimilarPages] = useState<SimilarPage[]>([])
+    const [copied, setCopied] = useState(false)
+
+    const handleCopySummary = async () => {
+        if (!summary) return
+        try {
+            await navigator.clipboard.writeText(summary)
+            setCopied(true)
+            setTimeout(() => setCopied(false), 2000)
+        } catch (err) {
+            console.error("Failed to copy:", err)
+        }
+    }
 
     const truncateUrl = (url: string, maxLength = 60) => {
         if (url.length <= maxLength) return url
@@ -226,6 +238,28 @@ export function NodeDetailsWindow({
                         {/* Cursor effect while revealing */}
                         {isRevealing && <span className="inline-block w-0.5 h-4 bg-violet-400 animate-pulse ml-0.5" />}
                     </div>
+
+                    {/* Copy button */}
+                    {!isRevealing && (
+                        <Button
+                            onClick={handleCopySummary}
+                            variant="ghost"
+                            size="sm"
+                            className="mt-3 w-full text-violet-300 border border-violet-500/30 hover:bg-violet-500/20 hover:text-white transition-all"
+                        >
+                            {copied ? (
+                                <>
+                                    <Check className="w-4 h-4 mr-2 text-green-400" />
+                                    Copied!
+                                </>
+                            ) : (
+                                <>
+                                    <Copy className="w-4 h-4 mr-2" />
+                                    Copy Summary
+                                </>
+                            )}
+                        </Button>
+                    )}
                 </div>
             )}
 
