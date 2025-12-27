@@ -1,6 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import type React from "react"
+
+import { useState, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { useAuth } from "@/lib/auth-context"
@@ -16,6 +18,18 @@ export default function LoginPage() {
     const [isLoading, setIsLoading] = useState(false)
     const { login } = useAuth()
     const router = useRouter()
+
+    // Memoize stars pour qu'il ne se regenere pas a chaque frappe
+    const stars = useMemo(() =>
+        [...Array(50)].map((_, i) => ({
+            id: i,
+            top: Math.random() * 100,
+            left: Math.random() * 100,
+            delay: Math.random() * 3,
+            duration: 2 + Math.random() * 3,
+            opacity: Math.random() * 0.7 + 0.3,
+        })),
+        [])
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -33,35 +47,53 @@ export default function LoginPage() {
     }
 
     return (
-        <div className="min-h-screen relative">
+        <div className="min-h-screen relative overflow-hidden">
             {/* Background - covers entire screen including behind navbar */}
-            <div className="absolute inset-0 bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950">
-                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-cyan-900/10 via-transparent to-transparent" />
+            <div className="absolute inset-0 bg-gradient-to-br from-gray-950 via-slate-900 to-gray-950">
+                {/* Animated stars */}
+                <div className="absolute inset-0">
+                    {stars.map((star) => (
+                        <div
+                            key={star.id}
+                            className="absolute h-0.5 w-0.5 bg-white rounded-full animate-pulse"
+                            style={{
+                                top: `${star.top}%`,
+                                left: `${star.left}%`,
+                                animationDelay: `${star.delay}s`,
+                                animationDuration: `${star.duration}s`,
+                                opacity: star.opacity,
+                            }}
+                        />
+                    ))}
+                </div>
+                {/* Gradient overlay */}
+                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-cyan-950/20 via-transparent to-transparent" />
+                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_right,_var(--tw-gradient-stops))] from-purple-950/20 via-transparent to-transparent" />
             </div>
 
             {/* Content with pt-24 for navbar spacing */}
             <div className="relative z-10 flex flex-col min-h-screen items-center justify-center pt-24 w-full max-w-md mx-auto px-4">
                 {/* Card */}
-                <div className="rounded-xl border border-white/10 bg-gray-900/50 p-8 backdrop-blur-xl">
+                <div className="w-full rounded-2xl border border-white/10 bg-gray-900/70 p-8 backdrop-blur-2xl shadow-2xl shadow-cyan-500/10 animate-in fade-in slide-in-from-bottom-4 duration-700">
                     {/* Header */}
                     <div className="mb-8 text-center">
-                        <div className="mb-4 inline-flex items-center justify-center rounded-full bg-cyan-500/10 p-3">
-                            <Globe className="h-8 w-8 text-cyan-400" />
+                        <div className="mb-6 inline-flex items-center justify-center rounded-full bg-gradient-to-br from-cyan-500/20 to-blue-500/20 p-4 shadow-lg shadow-cyan-500/20">
+                            <Globe className="h-10 w-10 text-cyan-400 drop-shadow-[0_0_8px_rgba(34,211,238,0.5)]" />
                         </div>
-                        <h1 className="text-2xl font-bold text-white">Welcome back</h1>
-                        <p className="mt-2 text-gray-400">Sign in to access your crawl history</p>
+                        <h1 className="text-3xl font-bold text-white mb-2">Welcome back</h1>
+                        <p className="text-gray-400 text-balance">Sign in to access your crawl history</p>
                     </div>
 
                     {/* Form */}
-                    <form onSubmit={handleSubmit} className="space-y-4">
+                    <form onSubmit={handleSubmit} className="space-y-5">
                         {error && (
-                            <div className="rounded-lg bg-red-500/10 p-3 text-sm text-red-400">
-                                {error}
-                            </div>
+                            <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-3 text-sm text-red-400">{error}</div>
                         )}
 
                         <div className="space-y-2">
-                            <Label htmlFor="email" className="text-gray-300">Email</Label>
+                            <Label htmlFor="email" className="text-gray-300 text-sm font-medium">
+                                Email
+                            </Label>
                             <Input
                                 id="email"
                                 type="email"
@@ -69,12 +101,14 @@ export default function LoginPage() {
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
                                 required
-                                className="border-white/10 bg-gray-800/50 text-white placeholder:text-gray-500"
+                                className="h-11 border-white/10 bg-gray-800/50 text-white placeholder:text-gray-500 focus:border-cyan-500/50 focus:ring-cyan-500/20"
                             />
                         </div>
 
                         <div className="space-y-2">
-                            <Label htmlFor="password" className="text-gray-300">Password</Label>
+                            <Label htmlFor="password" className="text-gray-300 text-sm font-medium">
+                                Password
+                            </Label>
                             <Input
                                 id="password"
                                 type="password"
@@ -82,14 +116,14 @@ export default function LoginPage() {
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
                                 required
-                                className="border-white/10 bg-gray-800/50 text-white placeholder:text-gray-500"
+                                className="h-11 border-white/10 bg-gray-800/50 text-white placeholder:text-gray-500 focus:border-cyan-500/50 focus:ring-cyan-500/20"
                             />
                         </div>
 
                         <Button
                             type="submit"
                             disabled={isLoading}
-                            className="w-full bg-gradient-to-r from-cyan-500 to-blue-500 text-white hover:from-cyan-600 hover:to-blue-600"
+                            className="w-full h-11 mt-6 bg-gradient-to-r from-cyan-500 to-blue-500 text-white font-medium hover:from-cyan-600 hover:to-blue-600 shadow-lg shadow-cyan-500/20 transition-all hover:shadow-cyan-500/30 hover:scale-[1.02]"
                         >
                             {isLoading ? (
                                 <>
@@ -105,7 +139,10 @@ export default function LoginPage() {
                     {/* Footer */}
                     <p className="mt-6 text-center text-sm text-gray-400">
                         Don&apos;t have an account?{" "}
-                        <Link href="/register" className="text-cyan-400 hover:underline">
+                        <Link
+                            href="/register"
+                            className="text-cyan-400 hover:text-cyan-300 font-medium transition-colors hover:underline"
+                        >
                             Sign up
                         </Link>
                     </p>

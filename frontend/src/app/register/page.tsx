@@ -1,6 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import type React from "react"
+
+import { useState, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { useAuth } from "@/lib/auth-context"
@@ -17,6 +19,18 @@ export default function RegisterPage() {
     const [isLoading, setIsLoading] = useState(false)
     const { register } = useAuth()
     const router = useRouter()
+
+    // Memoize stars so they don't regenerate on each keystroke
+    const stars = useMemo(() =>
+        [...Array(50)].map((_, i) => ({
+            id: i,
+            top: Math.random() * 100,
+            left: Math.random() * 100,
+            delay: Math.random() * 3,
+            duration: 2 + Math.random() * 3,
+            opacity: Math.random() * 0.7 + 0.3,
+        })),
+        [])
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -45,35 +59,52 @@ export default function RegisterPage() {
     }
 
     return (
-        <div className="min-h-screen relative">
-            {/* Background - covers entire screen including behind navbar */}
-            <div className="absolute inset-0 bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950">
-                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-blue-900/10 via-transparent to-transparent" />
+        <div className="min-h-screen relative overflow-hidden">
+            {/* Animated starfield background matching main app */}
+            <div className="absolute inset-0 bg-gradient-to-br from-gray-950 via-slate-900 to-gray-950">
+                {/* Animated stars */}
+                <div className="absolute inset-0">
+                    {stars.map((star) => (
+                        <div
+                            key={star.id}
+                            className="absolute h-0.5 w-0.5 bg-white rounded-full animate-pulse"
+                            style={{
+                                top: `${star.top}%`,
+                                left: `${star.left}%`,
+                                animationDelay: `${star.delay}s`,
+                                animationDuration: `${star.duration}s`,
+                                opacity: star.opacity,
+                            }}
+                        />
+                    ))}
+                </div>
+                {/* Gradient overlay */}
+                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-purple-950/20 via-transparent to-transparent" />
+                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_left,_var(--tw-gradient-stops))] from-blue-950/20 via-transparent to-transparent" />
             </div>
 
             {/* Content with pt-24 for navbar spacing */}
             <div className="relative z-10 flex flex-col min-h-screen items-center justify-center pt-24 w-full max-w-md mx-auto px-4">
-                {/* Card */}
-                <div className="rounded-xl border border-white/10 bg-gray-900/50 p-8 backdrop-blur-xl">
+                <div className="w-full rounded-2xl border border-white/10 bg-gray-900/70 p-8 backdrop-blur-2xl shadow-2xl shadow-purple-500/10 animate-in fade-in slide-in-from-bottom-4 duration-700">
                     {/* Header */}
                     <div className="mb-8 text-center">
-                        <div className="mb-4 inline-flex items-center justify-center rounded-full bg-blue-500/10 p-3">
-                            <Globe className="h-8 w-8 text-blue-400" />
+                        <div className="mb-6 inline-flex items-center justify-center rounded-full bg-gradient-to-br from-blue-500/20 to-purple-500/20 p-4 shadow-lg shadow-purple-500/20">
+                            <Globe className="h-10 w-10 text-purple-400 drop-shadow-[0_0_8px_rgba(168,85,247,0.5)]" />
                         </div>
-                        <h1 className="text-2xl font-bold text-white">Create an account</h1>
-                        <p className="mt-2 text-gray-400">Save your crawls and access them anytime</p>
+                        <h1 className="text-3xl font-bold text-white mb-2">Create an account</h1>
+                        <p className="text-gray-400 text-balance">Save your crawls and access them anytime</p>
                     </div>
 
                     {/* Form */}
-                    <form onSubmit={handleSubmit} className="space-y-4">
+                    <form onSubmit={handleSubmit} className="space-y-5">
                         {error && (
-                            <div className="rounded-lg bg-red-500/10 p-3 text-sm text-red-400">
-                                {error}
-                            </div>
+                            <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-3 text-sm text-red-400">{error}</div>
                         )}
 
                         <div className="space-y-2">
-                            <Label htmlFor="email" className="text-gray-300">Email</Label>
+                            <Label htmlFor="email" className="text-gray-300 text-sm font-medium">
+                                Email
+                            </Label>
                             <Input
                                 id="email"
                                 type="email"
@@ -81,12 +112,14 @@ export default function RegisterPage() {
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
                                 required
-                                className="border-white/10 bg-gray-800/50 text-white placeholder:text-gray-500"
+                                className="h-11 border-white/10 bg-gray-800/50 text-white placeholder:text-gray-500 focus:border-purple-500/50 focus:ring-purple-500/20"
                             />
                         </div>
 
                         <div className="space-y-2">
-                            <Label htmlFor="password" className="text-gray-300">Password</Label>
+                            <Label htmlFor="password" className="text-gray-300 text-sm font-medium">
+                                Password
+                            </Label>
                             <Input
                                 id="password"
                                 type="password"
@@ -94,12 +127,14 @@ export default function RegisterPage() {
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
                                 required
-                                className="border-white/10 bg-gray-800/50 text-white placeholder:text-gray-500"
+                                className="h-11 border-white/10 bg-gray-800/50 text-white placeholder:text-gray-500 focus:border-purple-500/50 focus:ring-purple-500/20"
                             />
                         </div>
 
                         <div className="space-y-2">
-                            <Label htmlFor="confirmPassword" className="text-gray-300">Confirm Password</Label>
+                            <Label htmlFor="confirmPassword" className="text-gray-300 text-sm font-medium">
+                                Confirm Password
+                            </Label>
                             <Input
                                 id="confirmPassword"
                                 type="password"
@@ -107,14 +142,14 @@ export default function RegisterPage() {
                                 value={confirmPassword}
                                 onChange={(e) => setConfirmPassword(e.target.value)}
                                 required
-                                className="border-white/10 bg-gray-800/50 text-white placeholder:text-gray-500"
+                                className="h-11 border-white/10 bg-gray-800/50 text-white placeholder:text-gray-500 focus:border-purple-500/50 focus:ring-purple-500/20"
                             />
                         </div>
 
                         <Button
                             type="submit"
                             disabled={isLoading}
-                            className="w-full bg-gradient-to-r from-blue-500 to-purple-500 text-white hover:from-blue-600 hover:to-purple-600"
+                            className="w-full h-11 mt-6 bg-gradient-to-r from-blue-500 to-purple-500 text-white font-medium hover:from-blue-600 hover:to-purple-600 shadow-lg shadow-purple-500/20 transition-all hover:shadow-purple-500/30 hover:scale-[1.02]"
                         >
                             {isLoading ? (
                                 <>
@@ -130,7 +165,10 @@ export default function RegisterPage() {
                     {/* Footer */}
                     <p className="mt-6 text-center text-sm text-gray-400">
                         Already have an account?{" "}
-                        <Link href="/login" className="text-cyan-400 hover:underline">
+                        <Link
+                            href="/login"
+                            className="text-cyan-400 hover:text-cyan-300 font-medium transition-colors hover:underline"
+                        >
                             Sign in
                         </Link>
                     </p>
