@@ -27,6 +27,7 @@ export default function WebVisualizer() {
   const [isConnected, setIsConnected] = useState(false)
   const [isCrawling, setIsCrawling] = useState(false)
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
+  const [rateLimitError, setRateLimitError] = useState<string | null>(null)
 
   const [nodes, setNodes] = useState<Node[]>([])
   const [links, setLinks] = useState<Link[]>([])
@@ -168,6 +169,7 @@ export default function WebVisualizer() {
 
     setCrawlCompleted(false)
     setSearchScores({})
+    setRateLimitError(null)
 
     try {
       const resp = await fetch("http://localhost:8000/api/crawl", {
@@ -176,6 +178,13 @@ export default function WebVisualizer() {
         credentials: "include",
         body: JSON.stringify({ url, ...config }),
       })
+
+      // Handle rate limit
+      if (resp.status === 429) {
+        setRateLimitError("Too many crawls! Please wait a moment before exploring again ✨")
+        setTimeout(() => setRateLimitError(null), 5000) // Auto-dismiss after 5s
+        return
+      }
 
       if (!resp.ok) throw new Error(`Failed: ${resp.status}`)
       const data = await resp.json()
@@ -363,6 +372,23 @@ export default function WebVisualizer() {
   return (
     <div className="relative h-screen w-full bg-black overflow-hidden">
       <Starfield />
+
+      {/* Rate Limit Error Toast */}
+      {rateLimitError && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-top-4 duration-300">
+          <div className="px-6 py-4 rounded-2xl bg-gradient-to-r from-red-500/20 to-orange-500/20 border border-red-500/30 backdrop-blur-xl shadow-2xl shadow-red-500/20">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center">
+                <span className="text-xl">⏳</span>
+              </div>
+              <div>
+                <p className="text-white font-semibold">Slow down, explorer!</p>
+                <p className="text-white/70 text-sm">{rateLimitError}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <GraphCanvas
         nodes={nodes}
