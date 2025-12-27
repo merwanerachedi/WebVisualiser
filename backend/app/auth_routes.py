@@ -2,7 +2,7 @@
 import logging
 import uuid
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 
 from .auth import (
     REFRESH_TOKEN_EXPIRE_DAYS,
@@ -14,6 +14,7 @@ from .auth import (
 )
 from .database import db
 from .models import Token, UserCreate, UserLogin, UserResponse
+from .rate_limiter import RateLimiter
 from .redis_cache import cache
 
 logger = logging.getLogger(__name__)
@@ -22,7 +23,11 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 @router.post("/register", response_model=UserResponse)
-async def register(user_data: UserCreate):
+async def register(
+    request: Request,
+    user_data: UserCreate,
+    _: None = Depends(RateLimiter(limit=3, window=60, key_prefix="auth:register")),
+):
     """Register a new user."""
     existing_user = await db.get_user_by_email(user_data.email)
     if existing_user:
@@ -50,7 +55,12 @@ async def register(user_data: UserCreate):
 
 
 @router.post("/login", response_model=Token)
-async def login(user_data: UserLogin, response: Response):
+async def login(
+    request: Request,
+    user_data: UserLogin,
+    response: Response,
+    _: None = Depends(RateLimiter(limit=5, window=60, key_prefix="auth:login")),
+):
     """Login and get access token + refresh token in HttpOnly cookies."""
     user = await db.get_user_by_email(user_data.email)
     if not user:

@@ -6,7 +6,7 @@ import traceback
 import uuid
 from datetime import datetime
 
-from fastapi import Depends, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from .auth import get_current_user, get_current_user_optional
@@ -14,6 +14,7 @@ from .auth_routes import router as auth_router
 from .crawler import WebCrawler
 from .database import db
 from .models import CrawlHistoryItem, CrawlRequest, CrawlResponse
+from .rate_limiter import RateLimiter
 from .redis_cache import cache
 from .websocket import ConnectionManager
 
@@ -55,8 +56,10 @@ async def shutdown_event():
 
 @app.post("/api/crawl", response_model=CrawlResponse)
 async def create_crawl(
+    request_obj: Request,
     request: CrawlRequest,
     current_user: dict | None = Depends(get_current_user_optional),
+    _: None = Depends(RateLimiter(limit=5, window=60, key_prefix="crawl")),
 ):
     crawl_id = str(uuid.uuid4())
     root_url = str(request.url)
@@ -186,8 +189,13 @@ async def search_pages(q: str):
 
 
 @app.get("/api/crawls", response_model=list[CrawlHistoryItem])
-async def get_user_crawls(current_user: dict = Depends(get_current_user)):
+async def get_user_crawls(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+    _: None = Depends(RateLimiter(limit=30, window=60, key_prefix="crawls", use_user_id=True)),
+):
     """Get all crawls for the authenticated user."""
+    request.state.user = current_user  # For rate limiter to use user_id
     try:
         crawls = await db.get_user_crawls(current_user["user_id"])
         return crawls
@@ -197,8 +205,14 @@ async def get_user_crawls(current_user: dict = Depends(get_current_user)):
 
 
 @app.delete("/api/crawl/{crawl_id}")
-async def delete_crawl(crawl_id: str, current_user: dict = Depends(get_current_user)):
+async def delete_crawl(
+    request: Request,
+    crawl_id: str,
+    current_user: dict = Depends(get_current_user),
+    _: None = Depends(RateLimiter(limit=10, window=60, key_prefix="crawl:delete", use_user_id=True)),
+):
     """Delete a crawl (only if owned by the user)."""
+    request.state.user = current_user  # For rate limiter to use user_id
     try:
         deleted = await db.delete_crawl(crawl_id, current_user["user_id"])
         if not deleted:
@@ -218,7 +232,11 @@ async def delete_crawl(crawl_id: str, current_user: dict = Depends(get_current_u
 
 
 @app.post("/api/page/summarize")
-async def summarize_page(url: str):
+async def summarize_page(
+    request: Request,
+    url: str,
+    _: None = Depends(RateLimiter(limit=2, window=60, key_prefix="summarize")),
+):
     # Génerer ou récupérer un résumé pour une page (depuis redis si possible)
     from .summarizer import summarize_url
 
