@@ -429,11 +429,13 @@ class Neo4jDatabase:
 
             results = []
             async for record in result:
-                results.append({
-                    "url": record["url"],
-                    "title": record["title"],
-                    "score": round(record["score"], 3),
-                })
+                results.append(
+                    {
+                        "url": record["url"],
+                        "title": record["title"],
+                        "score": round(record["score"], 3),
+                    }
+                )
             return results
 
     async def close(self):
@@ -442,4 +444,3 @@ class Neo4jDatabase:
 
 # Singleton
 db = Neo4jDatabase()
-
