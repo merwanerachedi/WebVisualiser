@@ -117,8 +117,8 @@ export function GraphCanvas({
         linkVisibility={(link) => {
           // In analytics mode, hide links if either endpoint is filtered out
           if (!analyticsMode) return true
-          const sourceUrl = typeof link.source === "object" ? (link.source as Node).url : link.source
-          const targetUrl = typeof link.target === "object" ? (link.target as Node).url : link.target
+          const sourceUrl = typeof link.source === "object" ? (link.source as Node).url : String(link.source)
+          const targetUrl = typeof link.target === "object" ? (link.target as Node).url : String(link.target)
           return nodePassesFilter(sourceUrl) && nodePassesFilter(targetUrl)
         }}
         linkColor={(link) =>
