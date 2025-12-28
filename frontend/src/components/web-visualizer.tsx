@@ -1,5 +1,7 @@
 "use client"
 
+import type React from "react"
+
 import { useState, useEffect, useRef, useCallback } from "react"
 import { useSearchParams } from "next/navigation"
 import { Starfield } from "./visualizer/starfield"
@@ -156,7 +158,7 @@ export default function WebVisualizer() {
       }
       setSimilarNodes(similar)
     },
-    [selectedNode]
+    [selectedNode],
   )
 
   const handleNodeClick = useCallback((node: Node, screenX: number, screenY: number) => {
@@ -179,10 +181,7 @@ export default function WebVisualizer() {
 
     setIsLoadingAnalytics(true)
     try {
-      const response = await fetch(
-        `${API_URL}/api/crawl/${activeCrawlId}/pagerank`,
-        { credentials: "include" }
-      )
+      const response = await fetch(`${API_URL}/api/crawl/${activeCrawlId}/pagerank`, { credentials: "include" })
 
       // Handle rate limit
       if (response.status === 429) {
@@ -453,6 +452,22 @@ export default function WebVisualizer() {
     links: links.length,
   }
 
+  const getSliderThumbColor = (value: number) => {
+    if (value < 33) {
+      // Cyan to purple
+      const t = value / 33
+      return `rgb(${6 + (147 - 6) * t}, ${182 + (51 - 182) * t}, ${212 + (255 - 212) * t})`
+    } else if (value < 66) {
+      // Purple to pink
+      const t = (value - 33) / 33
+      return `rgb(${147 + (236 - 147) * t}, ${51 + (72 - 51) * t}, ${255 + (153 - 255) * t})`
+    } else {
+      // Pink to red
+      const t = (value - 66) / 34
+      return `rgb(${236 + (239 - 236) * t}, ${72 + (68 - 72) * t}, ${153 + (68 - 153) * t})`
+    }
+  }
+
   return (
     <div className="relative h-screen w-full bg-black overflow-hidden">
       <Starfield />
@@ -537,44 +552,106 @@ export default function WebVisualizer() {
         {/* Analytics Mode Controls - visible when graph has nodes */}
         {nodes.length > 0 && !isCrawling && (
           <div className="mt-4 pt-4 border-t border-white/10 space-y-3">
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleAnalytics}
-                disabled={isLoadingAnalytics}
-                className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${analyticsMode
-                  ? "bg-gradient-to-r from-amber-600 to-orange-600 text-white"
-                  : "bg-white/10 hover:bg-white/20 text-white"
-                  }`}
-              >
-                {isLoadingAnalytics ? (
-                  <>
-                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Calculating...
-                  </>
-                ) : (
-                  <>
-                    <span>📊</span>
-                    {analyticsMode ? "Analytics ON" : "Analytics"}
-                  </>
-                )}
-              </button>
-            </div>
+            <button
+              onClick={handleAnalytics}
+              disabled={isLoadingAnalytics}
+              className={`
+                w-full group relative overflow-hidden rounded-xl transition-all duration-300
+                ${analyticsMode
+                  ? "bg-gradient-to-r from-cyan-500/20 via-purple-500/20 to-pink-500/20 border-2 border-cyan-400/50 shadow-[0_0_30px_rgba(6,182,212,0.4)]"
+                  : "bg-white/5 hover:bg-white/10 border-2 border-white/10 hover:border-white/20"
+                }
+              `}
+            >
+              {/* Background shimmer effect when active */}
+              {analyticsMode && (
+                <div className="absolute inset-0 opacity-30">
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-[shimmer_2s_infinite]" />
+                </div>
+              )}
 
-            {/* Importance Slider - only visible in analytics mode */}
+              <div className="relative flex items-center justify-between px-4 py-3">
+                <div className="flex items-center gap-3">
+                  {/* Custom analytics icon */}
+                  <div
+                    className={`
+                    flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-300
+                    ${analyticsMode ? "bg-gradient-to-br from-cyan-500 to-purple-500" : "bg-white/10"}
+                  `}
+                  >
+                    <svg
+                      className={`w-5 h-5 transition-colors ${analyticsMode ? "text-white" : "text-white/60"}`}
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M3 3v18h18" />
+                      <path d="m19 9-5 5-4-4-3 3" />
+                      <circle cx="19" cy="9" r="1.5" fill="currentColor" />
+                    </svg>
+                  </div>
+
+                  <div className="text-left">
+                    <div className={`font-semibold ${analyticsMode ? "text-cyan-300" : "text-white/90"}`}>
+                      Analytics
+                    </div>
+                    <div className="text-xs text-white/50">PageRank visualization</div>
+                  </div>
+                </div>
+
+                {/* Toggle switch */}
+                <div
+                  className={`
+                  relative w-12 h-6 rounded-full transition-all duration-300
+                  ${analyticsMode ? "bg-gradient-to-r from-cyan-500 to-purple-500" : "bg-white/20"}
+                `}
+                >
+                  <div
+                    className={`
+                    absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-all duration-300 shadow-lg
+                    ${analyticsMode ? "translate-x-6" : "translate-x-0"}
+                  `}
+                  />
+                </div>
+              </div>
+            </button>
+
+            {/* Importance Filter - only visible when analytics is ON */}
             {analyticsMode && (
-              <div className="space-y-1">
+              <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-300">
                 <div className="flex justify-between text-xs text-white/60">
                   <span>Importance Filter</span>
                   <span>{importanceFilter}%</span>
                 </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={importanceFilter}
-                  onChange={(e) => setImportanceFilter(Number(e.target.value))}
-                  className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-amber-500"
-                />
+                <div className="relative">
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={importanceFilter}
+                    onChange={(e) => setImportanceFilter(Number(e.target.value))}
+                    className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow-lg [&::-webkit-slider-thumb]:transition-all [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:cursor-pointer [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:shadow-lg [&::-moz-range-thumb]:transition-all"
+                    style={
+                      {
+                        // @ts-ignore - CSS custom properties for dynamic colors
+                        "--thumb-color": getSliderThumbColor(importanceFilter),
+                      } as React.CSSProperties
+                    }
+                  />
+                  <style jsx>{`
+                    input[type='range']::-webkit-slider-thumb {
+                      background: var(--thumb-color);
+                      box-shadow: 0 0 10px var(--thumb-color), 0 0 20px var(--thumb-color);
+                    }
+                    input[type='range']::-moz-range-thumb {
+                      background: var(--thumb-color);
+                      box-shadow: 0 0 10px var(--thumb-color), 0 0 20px var(--thumb-color);
+                    }
+                  `}</style>
+                </div>
                 <div className="flex justify-between text-[10px] text-white/40">
                   <span>Show all</span>
                   <span>Top only</span>

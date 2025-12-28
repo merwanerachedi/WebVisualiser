@@ -43,15 +43,15 @@ const normalizeUrl = (url: string | undefined) => {
   return url.endsWith("/") ? url.slice(0, -1) : url
 }
 
-// Heatmap color function: low score = blue, high score = red
+// Heatmap color function: low score = cyan, high score = red
 const getHeatmapColor = (score: number, maxScore: number): string => {
-  if (maxScore === 0) return "#6366f1" // indigo default
+  if (maxScore === 0) return "#06b6d4" // cyan default
   const normalized = score / maxScore // 0 to 1
-  // Blue -> Purple -> Orange -> Red
-  if (normalized < 0.25) return "#3b82f6" // blue-500
-  if (normalized < 0.5) return "#8b5cf6" // violet-500
-  if (normalized < 0.75) return "#f97316" // orange-500
-  return "#ef4444" // red-500
+  // Cyan (cool) -> Purple -> Pink -> Red (hot) - neon/cyberpunk theme
+  if (normalized < 0.25) return "#06b6d4" // cyan-500 - lowest rank
+  if (normalized < 0.5) return "#8b5cf6" // violet-500 - low-medium rank
+  if (normalized < 0.75) return "#ec4899" // pink-500 - medium-high rank
+  return "#ef4444" // red-500 - highest rank
 }
 
 export function GraphCanvas({
@@ -91,13 +91,16 @@ export function GraphCanvas({
   }
 
   // Helper: Check if a node passes the importance filter
-  const nodePassesFilter = useCallback((nodeUrl: string) => {
-    if (!analyticsMode) return true
-    const normalizedUrl = normalizeUrl(nodeUrl)
-    const score = pageRankScores[normalizedUrl] || 0
-    const normalizedScore = maxPageRank > 0 ? (score / maxPageRank) * 100 : 0
-    return normalizedScore >= importanceFilter
-  }, [analyticsMode, pageRankScores, maxPageRank, importanceFilter])
+  const nodePassesFilter = useCallback(
+    (nodeUrl: string) => {
+      if (!analyticsMode) return true
+      const normalizedUrl = normalizeUrl(nodeUrl)
+      const score = pageRankScores[normalizedUrl] || 0
+      const normalizedScore = maxPageRank > 0 ? (score / maxPageRank) * 100 : 0
+      return normalizedScore >= importanceFilter
+    },
+    [analyticsMode, pageRankScores, maxPageRank, importanceFilter],
+  )
 
   return (
     <div className="absolute inset-0 z-10">
@@ -114,8 +117,8 @@ export function GraphCanvas({
         linkVisibility={(link) => {
           // In analytics mode, hide links if either endpoint is filtered out
           if (!analyticsMode) return true
-          const sourceUrl = typeof link.source === 'object' ? (link.source as Node).url : link.source
-          const targetUrl = typeof link.target === 'object' ? (link.target as Node).url : link.target
+          const sourceUrl = typeof link.source === "object" ? (link.source as Node).url : link.source
+          const targetUrl = typeof link.target === "object" ? (link.target as Node).url : link.target
           return nodePassesFilter(sourceUrl) && nodePassesFilter(targetUrl)
         }}
         linkColor={(link) =>
@@ -196,7 +199,19 @@ export function GraphCanvas({
             const glowSize = 12
             const gradient = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, glowSize)
 
-            if (isSimilarModeActive && isSimilarNode) {
+            // Match glow to PageRank color
+            if (analyticsMode) {
+              const color = getHeatmapColor(nodePageRank, maxPageRank)
+              if (color === "#06b6d4") {
+                gradient.addColorStop(0, "rgba(6, 182, 212, 0.9)") // cyan glow
+              } else if (color === "#8b5cf6") {
+                gradient.addColorStop(0, "rgba(139, 92, 246, 0.9)") // purple glow
+              } else if (color === "#ec4899") {
+                gradient.addColorStop(0, "rgba(236, 72, 153, 0.9)") // pink glow
+              } else {
+                gradient.addColorStop(0, "rgba(239, 68, 68, 0.9)") // red glow
+              }
+            } else if (isSimilarModeActive && isSimilarNode) {
               // Cyan glow for similar pages
               gradient.addColorStop(0, "rgba(6, 182, 212, 0.9)") // cyan glow
             } else if (isSearchActive) {
