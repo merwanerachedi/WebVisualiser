@@ -98,6 +98,66 @@ class WebCrawler:
         normalized = urlunparse((parsed.scheme, parsed.netloc.lower(), path, "", parsed.query, ""))
         return normalized
 
+    @staticmethod
+    def _get_link_type(link_tag) -> str:
+        """
+        Detect if a link is structural (nav/footer/header) or content.
+        Logic: Safe Zone (main) takes priority, then check for structural elements.
+        """
+        # Mots-clés qui indiquent du "Bruit" (Navigation, Pub, Footer...)
+        structural_tags = ["nav", "header", "footer", "aside"]
+        structural_keywords = [
+            "menu",
+            "navbar",
+            "sidebar",
+            "sidenav",
+            "breadcrumb",
+            "pagination",
+            "footer",
+            "widget",
+            "popup",
+        ]
+
+        # On remonte l'arbre généalogique
+        for parent in link_tag.parents:
+            if parent is None or parent.name == "body":
+                break
+
+            # --- A. LA SAFE ZONE (Le Bouclier) ---
+            # Si on trouve ça, on est SÛR que c'est du bon contenu.
+            # On s'arrête immédiatement : le contenu gagne toujours.
+
+            # 1. La balise officielle HTML5
+            if parent.name == "main":
+                return "content"
+
+            # 2. L'attribut d'accessibilité (très fiable aussi)
+            if parent.get("role") == "main":
+                return "content"
+
+            # 3. Les IDs classiques des vieux sites (div id="main" ou id="content")
+            parent_id = str(parent.get("id", "")).lower()
+            if parent_id in ["main", "content", "body-content", "page-content"]:
+                return "content"
+
+            # --- B. LA ZONE DE DANGER (Le Structurel) ---
+            # Si on n'a pas encore trouvé de <main>, on vérifie si on est dans du bruit.
+
+            # 1. Vérif par Balise interdite
+            if parent.name in structural_tags:
+                return "structural"
+
+            # 2. Vérif par Classe CSS suspecte
+            # On concatène classes et ID pour chercher dedans
+            parent_classes = parent.get("class", [])
+            class_str = " ".join(parent_classes).lower() + " " + parent_id
+
+            if any(keyword in class_str for keyword in structural_keywords):
+                return "structural"
+
+        # Si on arrive en haut sans rien trouver, par défaut on garde le lien
+        return "content"
+
     async def start(self):
         logger.info(f"Starting crawl {self.crawl_id} for {self.root_url}")
 
@@ -254,6 +314,9 @@ class WebCrawler:
             if not self._should_crawl(absolute_url, current_domain):
                 continue
 
+            # Detect if link is structural (nav/footer) or content
+            link_type = self._get_link_type(link_tag)
+
             target_url = self.url_redirects.get(absolute_url, absolute_url)
             parsed_target = urlparse(target_url)
 
@@ -272,7 +335,7 @@ class WebCrawler:
             await self.db.create_link(
                 source_url=current_url,
                 target_url=target_url,
-                link_data={"anchor_text": anchor_text[:200], "crawl_id": self.crawl_id},
+                link_data={"anchor_text": anchor_text[:200], "crawl_id": self.crawl_id, "link_type": link_type},
             )
             self.links_found += 1
 

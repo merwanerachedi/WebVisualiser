@@ -282,7 +282,7 @@ class Neo4jDatabase:
                 MATCH (source:Page {url: $source_url})
                 MATCH (target:Page {url: $target_url})
                 MERGE (source)-[r:LINKS_TO]->(target)
-                ON CREATE SET r.anchor_text = $anchor_text, r.discovered_at = datetime(), r.crawl_id = $crawl_id
+                ON CREATE SET r.anchor_text = $anchor_text, r.discovered_at = datetime(), r.crawl_id = $crawl_id, r.link_type = $link_type
             """
             await session.run(query, source_url=source_url, target_url=target_url, **link_data)
 
@@ -300,23 +300,27 @@ class Neo4jDatabase:
             await session.run(query, crawl_id=crawl_id, page_url=page_url)
 
     async def update_redirect_link(self, source_url, old_target, final_target, crawl_id):
-        # (Garde ton code précédent ici)
         async with self.driver.session() as session:
             await session.run(
-                "MATCH (source:Page {url: $source_url})-[old:LINKS_TO]->(target:Page {url: $old_target}) DELETE old",
-                source_url=source_url,
-                old_target=old_target,
-            )
-            await session.run(
                 """
-                MATCH (source:Page {url: $source_url})
-                MATCH (target:Page {url: $final_target})
-                MERGE (source)-[r:LINKS_TO]->(target)
-                ON CREATE SET r.crawl_id = $crawl_id, r.was_redirected = true, r.original_url = $old_target
-            """,
+                MATCH (source:Page {url: $source_url})-[old:LINKS_TO]->(old_target:Page {url: $old_target})
+
+                MATCH (final_target:Page {url: $final_target})
+
+                MERGE (source)-[new_link:LINKS_TO]->(final_target)
+
+                ON CREATE SET
+                    new_link.crawl_id = $crawl_id,
+                    new_link.was_redirected = true,
+                    new_link.original_url = $old_target,
+                    new_link.link_type = old.link_type  //save de l'ancien type
+
+                // 5. On supprime l'ANCIEN lien
+                DELETE old
+                """,
                 source_url=source_url,
-                final_target=final_target,
                 old_target=old_target,
+                final_target=final_target,
                 crawl_id=crawl_id,
             )
 
@@ -434,6 +438,75 @@ class Neo4jDatabase:
                         "url": record["url"],
                         "title": record["title"],
                         "score": round(record["score"], 3),
+                    }
+                )
+            return results
+
+    async def calculate_pagerank(self, crawl_id: str):
+        """
+        Calculate PageRank for a crawl, ignoring structural links (nav/footer).
+        Stores the score on the [:CRAWLED] relation for per-crawl history.
+        """
+        graph_name = f"pagerank_{crawl_id}"
+
+        async with self.driver.session() as session:
+            # Drop existing graph if exists
+            try:
+                await session.run("CALL gds.graph.drop($name, false)", name=graph_name)
+            except Exception:
+                pass
+
+            # Create projected graph with only content links
+            node_query = f"MATCH (c:Crawl {{crawl_id: '{crawl_id}'}})-[:CRAWLED]->(p:Page) RETURN id(p) AS id"
+            rel_query = f"""
+                MATCH (c:Crawl {{crawl_id: '{crawl_id}'}})-[:CRAWLED]->(s:Page)-[r:LINKS_TO]->(t:Page)<-[:CRAWLED]-(c)
+                WHERE r.link_type = 'content' OR r.link_type IS NULL
+                RETURN id(s) AS source, id(t) AS target
+            """
+
+            await session.run(
+                """
+                CALL gds.graph.project.cypher($graph_name, $node_query, $rel_query)
+            """,
+                graph_name=graph_name,
+                node_query=node_query,
+                rel_query=rel_query,
+            )
+
+            # Run PageRank and stream results to write on [:CRAWLED] relation
+            await session.run(
+                """
+                CALL gds.pageRank.stream($graph_name) YIELD nodeId, score
+                WITH gds.util.asNode(nodeId) AS page, score
+                MATCH (c:Crawl {crawl_id: $crawl_id})-[r:CRAWLED]->(page)
+                SET r.pagerank = score
+            """,
+                graph_name=graph_name,
+                crawl_id=crawl_id,
+            )
+
+            # Drop projected graph to free memory
+            await session.run("CALL gds.graph.drop($name)", name=graph_name)
+
+            # Return top 50 results
+            result = await session.run(
+                """
+                MATCH (c:Crawl {crawl_id: $crawl_id})-[r:CRAWLED]->(p:Page)
+                WHERE r.pagerank IS NOT NULL
+                RETURN p.url AS url, p.title AS title, r.pagerank AS score
+                ORDER BY r.pagerank DESC
+                LIMIT 50
+            """,
+                crawl_id=crawl_id,
+            )
+
+            results = []
+            async for record in result:
+                results.append(
+                    {
+                        "url": record["url"],
+                        "title": record["title"],
+                        "score": round(record["score"], 4),
                     }
                 )
             return results
