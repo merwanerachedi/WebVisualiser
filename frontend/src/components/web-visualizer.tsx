@@ -183,6 +183,14 @@ export default function WebVisualizer() {
         `${API_URL}/api/crawl/${activeCrawlId}/pagerank`,
         { credentials: "include" }
       )
+
+      // Handle rate limit
+      if (response.status === 429) {
+        setRateLimitError("Calculating too fast! Please wait a moment ⏳")
+        setTimeout(() => setRateLimitError(null), 4000)
+        return
+      }
+
       if (!response.ok) throw new Error("Failed to fetch PageRank")
 
       const data = await response.json()

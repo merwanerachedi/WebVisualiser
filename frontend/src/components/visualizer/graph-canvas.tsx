@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useEffect, useState, useMemo } from "react"
+import { useEffect, useState, useMemo, useCallback } from "react"
 import dynamic from "next/dynamic"
 import type { Node, Link } from "./types"
 
@@ -90,6 +90,15 @@ export function GraphCanvas({
     }
   }
 
+  // Helper: Check if a node passes the importance filter
+  const nodePassesFilter = useCallback((nodeUrl: string) => {
+    if (!analyticsMode) return true
+    const normalizedUrl = normalizeUrl(nodeUrl)
+    const score = pageRankScores[normalizedUrl] || 0
+    const normalizedScore = maxPageRank > 0 ? (score / maxPageRank) * 100 : 0
+    return normalizedScore >= importanceFilter
+  }, [analyticsMode, pageRankScores, maxPageRank, importanceFilter])
+
   return (
     <div className="absolute inset-0 z-10">
       <ForceGraph2D
@@ -102,6 +111,13 @@ export function GraphCanvas({
         cooldownTicks={100}
         d3VelocityDecay={0.3}
         d3AlphaDecay={0.02}
+        linkVisibility={(link) => {
+          // In analytics mode, hide links if either endpoint is filtered out
+          if (!analyticsMode) return true
+          const sourceUrl = typeof link.source === 'object' ? (link.source as Node).url : link.source
+          const targetUrl = typeof link.target === 'object' ? (link.target as Node).url : link.target
+          return nodePassesFilter(sourceUrl) && nodePassesFilter(targetUrl)
+        }}
         linkColor={(link) =>
           (hoverNode && !highlightLinks.has(link)) || similarNodes.size > 0 || clickedNode
             ? "rgba(255, 255, 255, 0.05)"

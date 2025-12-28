@@ -344,15 +344,16 @@ class WebCrawler:
             self.pending_links.append((current_url, target_url))
 
             # ✅ UTILISATION DU THROTTLING (Critique pour les liens)
+            # Send normalized URLs to match node IDs in frontend
             await self._broadcast_throttled(
                 {
                     "type": "link_created",
-                    "data": {"source": current_url, "target": absolute_url, "anchor": anchor_text[:50]},
+                    "data": {"source": normalized_current, "target": target_url, "anchor": anchor_text[:50]},
                 }
             )
 
-            if absolute_url not in self.visited_urls:
-                self._add_to_queue(absolute_url, current_depth + 1)
+            if target_url not in self.visited_urls:
+                self._add_to_queue(target_url, current_depth + 1)
 
     async def _update_redirect_links(self):
         if not self.url_redirects:
