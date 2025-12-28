@@ -442,14 +442,59 @@ class Neo4jDatabase:
                 )
             return results
 
-    async def calculate_pagerank(self, crawl_id: str):
+    async def calculate_pagerank(self, crawl_id: str, force: bool = False):
         """
         Calculate PageRank for a crawl, ignoring structural links (nav/footer).
         Stores the score on the [:CRAWLED] relation for per-crawl history.
-        """
-        graph_name = f"pagerank_{crawl_id}"
 
+        Args:
+            crawl_id: The crawl ID
+            force: If False, return existing scores if available. If True, recalculate.
+
+        Returns:
+            dict with has_scores, max_score, and scores array
+        """
         async with self.driver.session() as session:
+            # Check if scores already exist
+            if not force:
+                check_result = await session.run(
+                    """
+                    MATCH (c:Crawl {crawl_id: $crawl_id})-[r:CRAWLED]->(p:Page)
+                    WHERE r.pagerank IS NOT NULL
+                    RETURN count(r) AS score_count
+                    """,
+                    crawl_id=crawl_id,
+                )
+                check = await check_result.single()
+                if check and check["score_count"] > 0:
+                    # Scores exist, return them
+                    result = await session.run(
+                        """
+                        MATCH (c:Crawl {crawl_id: $crawl_id})-[r:CRAWLED]->(p:Page)
+                        WHERE r.pagerank IS NOT NULL
+                        RETURN p.url AS url, p.title AS title, r.pagerank AS score
+                        ORDER BY r.pagerank DESC
+                        """,
+                        crawl_id=crawl_id,
+                    )
+                    scores = []
+                    max_score = 0
+                    async for record in result:
+                        score = record["score"]
+                        if score > max_score:
+                            max_score = score
+                        scores.append(
+                            {
+                                "url": record["url"],
+                                "title": record["title"],
+                                "score": round(score, 4),
+                            }
+                        )
+                    return {"has_scores": True, "max_score": round(max_score, 4), "scores": scores}
+
+            # Calculate PageRank
+            graph_name = f"pagerank_{crawl_id}"
+
             # Drop existing graph if exists
             try:
                 await session.run("CALL gds.graph.drop($name, false)", name=graph_name)
@@ -488,28 +533,32 @@ class Neo4jDatabase:
             # Drop projected graph to free memory
             await session.run("CALL gds.graph.drop($name)", name=graph_name)
 
-            # Return top 50 results
+            # Return all results with max_score
             result = await session.run(
                 """
                 MATCH (c:Crawl {crawl_id: $crawl_id})-[r:CRAWLED]->(p:Page)
                 WHERE r.pagerank IS NOT NULL
                 RETURN p.url AS url, p.title AS title, r.pagerank AS score
                 ORDER BY r.pagerank DESC
-                LIMIT 50
             """,
                 crawl_id=crawl_id,
             )
 
-            results = []
+            scores = []
+            max_score = 0
             async for record in result:
-                results.append(
+                score = record["score"]
+                if score > max_score:
+                    max_score = score
+                scores.append(
                     {
                         "url": record["url"],
                         "title": record["title"],
-                        "score": round(record["score"], 4),
+                        "score": round(score, 4),
                     }
                 )
-            return results
+
+            return {"has_scores": True, "max_score": round(max_score, 4), "scores": scores}
 
     async def close(self):
         await self.driver.close()

@@ -234,14 +234,23 @@ async def delete_crawl(
 @app.get("/api/crawl/{crawl_id}/pagerank")
 async def get_pagerank(
     crawl_id: str,
+    force: bool = False,
     _: None = Depends(RateLimiter(limit=5, window=60, key_prefix="pagerank")),
 ):
     """
     Calculate PageRank for a crawl, ignoring structural links (navbar/footer).
-    Returns top 50 pages by PageRank score.
+
+    Args:
+        crawl_id: The crawl ID
+        force: If True, recalculate even if scores exist
+
+    Returns:
+        has_scores: Whether scores exist
+        max_score: Maximum score for normalization
+        scores: Array of {url, title, score}
     """
     try:
-        results = await db.calculate_pagerank(crawl_id)
+        results = await db.calculate_pagerank(crawl_id, force=force)
         return results
     except Exception as e:
         logger.error(f"Error calculating PageRank: {e}")

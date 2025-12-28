@@ -94,7 +94,8 @@ class WebCrawler:
     @staticmethod
     def _normalize_url(url: str) -> str:
         parsed = urlparse(url)
-        path = parsed.path.rstrip("/") if parsed.path != "/" else "/"
+        # Normalize path: remove trailing slash, treat "/" and "" the same
+        path = parsed.path.rstrip("/")
         normalized = urlunparse((parsed.scheme, parsed.netloc.lower(), path, "", parsed.query, ""))
         return normalized
 
@@ -225,7 +226,7 @@ class WebCrawler:
                 elif status_code >= 400:
                     logger.warning(f"❌ Error {status_code}: {url}")
 
-                final_url = str(response.url)
+                final_url = self._normalize_url(str(response.url))
 
                 if final_url != url:
                     logger.info(f"🔀 Redirect: {url} → {final_url}")
@@ -317,7 +318,8 @@ class WebCrawler:
             # Detect if link is structural (nav/footer) or content
             link_type = self._get_link_type(link_tag)
 
-            target_url = self.url_redirects.get(absolute_url, absolute_url)
+            # Use normalized URL for storage
+            target_url = self.url_redirects.get(normalized_target, normalized_target)
             parsed_target = urlparse(target_url)
 
             await self.db.create_or_update_page(
@@ -339,7 +341,7 @@ class WebCrawler:
             )
             self.links_found += 1
 
-            self.pending_links.append((current_url, absolute_url))
+            self.pending_links.append((current_url, target_url))
 
             # ✅ UTILISATION DU THROTTLING (Critique pour les liens)
             await self._broadcast_throttled(

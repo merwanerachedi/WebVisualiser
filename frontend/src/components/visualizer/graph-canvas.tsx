@@ -31,11 +31,27 @@ interface GraphCanvasProps {
   clickedNode: Node | null
   similarNodes?: Set<string>
   hoveredSimilarUrl?: string | null
+  // Analytics Mode
+  analyticsMode?: boolean
+  pageRankScores?: Record<string, number>
+  maxPageRank?: number
+  importanceFilter?: number // 0-100
 }
 
 const normalizeUrl = (url: string | undefined) => {
   if (!url) return ""
   return url.endsWith("/") ? url.slice(0, -1) : url
+}
+
+// Heatmap color function: low score = blue, high score = red
+const getHeatmapColor = (score: number, maxScore: number): string => {
+  if (maxScore === 0) return "#6366f1" // indigo default
+  const normalized = score / maxScore // 0 to 1
+  // Blue -> Purple -> Orange -> Red
+  if (normalized < 0.25) return "#3b82f6" // blue-500
+  if (normalized < 0.5) return "#8b5cf6" // violet-500
+  if (normalized < 0.75) return "#f97316" // orange-500
+  return "#ef4444" // red-500
 }
 
 export function GraphCanvas({
@@ -52,6 +68,10 @@ export function GraphCanvas({
   clickedNode,
   similarNodes = new Set(),
   hoveredSimilarUrl = null,
+  analyticsMode = false,
+  pageRankScores = {},
+  maxPageRank = 0,
+  importanceFilter = 0,
 }: GraphCanvasProps) {
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 })
 
@@ -99,9 +119,24 @@ export function GraphCanvas({
           const isSimilarNode = similarNodes.has(node.id)
           const isHoveredSimilarNode = hoveredSimilarUrl && node.id === hoveredSimilarUrl
 
+          // Analytics mode: check if node passes importance threshold
+          // Use node.url (not node.id) since API returns URLs
+          const normalizedNodeUrl = normalizeUrl(node.url)
+          const nodePageRank = pageRankScores[normalizedNodeUrl] || 0
+          const normalizedScore = maxPageRank > 0 ? (nodePageRank / maxPageRank) * 100 : 0
+          const passesImportanceFilter = normalizedScore >= importanceFilter
+
+          // In analytics mode, hide nodes below threshold
+          if (analyticsMode && !passesImportanceFilter) {
+            return // Don't render this node
+          }
+
           // Determine if node should be dimmed
           let isDimmed = false
-          if (hoveredSimilarUrl) {
+          if (analyticsMode) {
+            // In analytics mode, no dimming - use heatmap colors instead
+            isDimmed = false
+          } else if (hoveredSimilarUrl) {
             // When hovering a result item, only highlight that specific node
             isDimmed = node.id !== hoveredSimilarUrl
           } else if (isSimilarModeActive) {
@@ -124,7 +159,10 @@ export function GraphCanvas({
 
           let fillStyle: string
 
-          if (isSimilarModeActive && isSimilarNode) {
+          if (analyticsMode) {
+            // Heatmap coloring based on PageRank score
+            fillStyle = getHeatmapColor(nodePageRank, maxPageRank)
+          } else if (isSimilarModeActive && isSimilarNode) {
             // Similar pages get cyan color
             fillStyle = "#06b6d4" // cyan-500
           } else if (isSearchActive) {

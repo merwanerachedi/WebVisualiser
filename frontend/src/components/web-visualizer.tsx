@@ -56,6 +56,14 @@ export default function WebVisualizer() {
   const [crawlCompleted, setCrawlCompleted] = useState(false)
   const [isStopping, setIsStopping] = useState(false)
 
+  // Analytics Mode States
+  const [analyticsMode, setAnalyticsMode] = useState(false)
+  const [pageRankScores, setPageRankScores] = useState<Record<string, number>>({})
+  const [maxPageRank, setMaxPageRank] = useState(0)
+  const [importanceFilter, setImportanceFilter] = useState(0) // 0-100%
+  const [isLoadingAnalytics, setIsLoadingAnalytics] = useState(false)
+  const [currentCrawlId, setCurrentCrawlId] = useState<string | null>(null)
+
   const wsRef = useRef<WebSocket | null>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const fgRef = useRef<any>(null)
@@ -157,6 +165,48 @@ export default function WebVisualizer() {
     setSimilarNodes(new Set()) // Clear similar nodes when clicking a new node
   }, [])
 
+  // Analytics Mode Handler
+  const handleAnalytics = useCallback(async () => {
+    const activeCrawlId = currentCrawlId || crawlIdFromUrl
+    if (!activeCrawlId) return
+
+    // If already in analytics mode, toggle off
+    if (analyticsMode) {
+      setAnalyticsMode(false)
+      setImportanceFilter(0)
+      return
+    }
+
+    setIsLoadingAnalytics(true)
+    try {
+      const response = await fetch(
+        `${API_URL}/api/crawl/${activeCrawlId}/pagerank`,
+        { credentials: "include" }
+      )
+      if (!response.ok) throw new Error("Failed to fetch PageRank")
+
+      const data = await response.json()
+
+      // Convert scores array to map for quick lookup
+      // Keep MAX score if URL appears multiple times
+      const scoresMap: Record<string, number> = {}
+      data.scores.forEach((s: { url: string; score: number }) => {
+        const normalizedUrl = normalizeUrl(s.url)
+        if (!scoresMap[normalizedUrl] || s.score > scoresMap[normalizedUrl]) {
+          scoresMap[normalizedUrl] = s.score
+        }
+      })
+
+      setPageRankScores(scoresMap)
+      setMaxPageRank(data.max_score)
+      setAnalyticsMode(true)
+    } catch (error) {
+      console.error("Analytics error:", error)
+    } finally {
+      setIsLoadingAnalytics(false)
+    }
+  }, [currentCrawlId, crawlIdFromUrl, analyticsMode])
+
   const handleSearch = useCallback(async () => {
     if (!searchQuery.trim()) return
 
@@ -214,6 +264,7 @@ export default function WebVisualizer() {
       if (!resp.ok) throw new Error(`Failed: ${resp.status}`)
       const data = await resp.json()
       const crawlId = data.crawl_id
+      setCurrentCrawlId(crawlId) // Store for analytics
 
       const ws = new WebSocket(`ws://localhost:8000/ws/${crawlId}`)
 
@@ -429,6 +480,10 @@ export default function WebVisualizer() {
         clickedNode={clickedNode}
         similarNodes={similarNodes}
         hoveredSimilarUrl={hoveredSimilarUrl}
+        analyticsMode={analyticsMode}
+        pageRankScores={pageRankScores}
+        maxPageRank={maxPageRank}
+        importanceFilter={importanceFilter}
       />
 
       {selectedNode && (
@@ -470,6 +525,56 @@ export default function WebVisualizer() {
           showSettings={showSettings}
           setShowSettings={setShowSettings}
         />
+
+        {/* Analytics Mode Controls - visible when graph has nodes */}
+        {nodes.length > 0 && !isCrawling && (
+          <div className="mt-4 pt-4 border-t border-white/10 space-y-3">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleAnalytics}
+                disabled={isLoadingAnalytics}
+                className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${analyticsMode
+                  ? "bg-gradient-to-r from-amber-600 to-orange-600 text-white"
+                  : "bg-white/10 hover:bg-white/20 text-white"
+                  }`}
+              >
+                {isLoadingAnalytics ? (
+                  <>
+                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Calculating...
+                  </>
+                ) : (
+                  <>
+                    <span>📊</span>
+                    {analyticsMode ? "Analytics ON" : "Analytics"}
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* Importance Slider - only visible in analytics mode */}
+            {analyticsMode && (
+              <div className="space-y-1">
+                <div className="flex justify-between text-xs text-white/60">
+                  <span>Importance Filter</span>
+                  <span>{importanceFilter}%</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={importanceFilter}
+                  onChange={(e) => setImportanceFilter(Number(e.target.value))}
+                  className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                />
+                <div className="flex justify-between text-[10px] text-white/40">
+                  <span>Show all</span>
+                  <span>Top only</span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </DraggableWindow>
 
       {showSettings && (
