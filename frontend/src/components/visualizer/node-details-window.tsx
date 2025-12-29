@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { ExternalLink, FileText, Loader2, Target, Copy, Check } from "lucide-react"
+import { useState, useEffect, useMemo } from "react"
+import { ExternalLink, FileText, Loader2, Target, Copy, Check, Link2, ChevronLeft, ChevronRight, ArrowUpDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 interface SimilarPage {
@@ -10,9 +10,17 @@ interface SimilarPage {
     score: number
 }
 
+interface OutlinkPage {
+    url: string
+    title: string | null
+    discovered_at: string | null
+    pagerank: number
+}
+
 interface NodeDetailsWindowProps {
     nodeUrl: string
     nodeTitle?: string
+    crawlId?: string | null  // Added for outlinks API
     onClose: () => void
     onSimilarPagesFound?: (pages: SimilarPage[]) => void
     onHoverSimilarPage?: (url: string | null) => void
@@ -23,6 +31,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 export function NodeDetailsWindow({
     nodeUrl,
     nodeTitle,
+    crawlId,
     onClose,
     onSimilarPagesFound,
     onHoverSimilarPage,
@@ -35,6 +44,64 @@ export function NodeDetailsWindow({
     const [isRevealing, setIsRevealing] = useState(false)
     const [similarPages, setSimilarPages] = useState<SimilarPage[]>([])
     const [copied, setCopied] = useState(false)
+
+    // Outlinks state
+    const [outlinks, setOutlinks] = useState<OutlinkPage[]>([])
+    const [showOutlinks, setShowOutlinks] = useState(false)
+    const [isLoadingOutlinks, setIsLoadingOutlinks] = useState(false)
+    const [outlinksPagination, setOutlinksPagination] = useState({
+        page: 1,
+        total: 0,
+        totalPages: 1,
+        perPage: 50,
+    })
+    const [sortBy, setSortBy] = useState<"discovery" | "pagerank">("discovery")
+
+    // Sort outlinks based on sortBy
+    const sortedOutlinks = useMemo(() => {
+        if (sortBy === "pagerank") {
+            return [...outlinks].sort((a, b) => b.pagerank - a.pagerank)
+        }
+        // Default: discovery order (already sorted by API)
+        return outlinks
+    }, [outlinks, sortBy])
+
+    const fetchOutlinks = async (pageNum: number = 1) => {
+        if (!crawlId) return
+        setIsLoadingOutlinks(true)
+        try {
+            const response = await fetch(
+                `${API_URL}/api/crawl/${crawlId}/page/outlinks?url=${encodeURIComponent(nodeUrl)}&page=${pageNum}&per_page=50`,
+                { credentials: "include" }
+            )
+            if (response.ok) {
+                const data = await response.json()
+                setOutlinks(data.links)
+                setOutlinksPagination({
+                    page: data.page,
+                    total: data.total,
+                    totalPages: data.total_pages,
+                    perPage: data.per_page,
+                })
+            }
+        } catch (err) {
+            console.error("Failed to fetch outlinks:", err)
+        } finally {
+            setIsLoadingOutlinks(false)
+        }
+    }
+
+    const handleViewOutlinks = async () => {
+        if (showOutlinks) {
+            setShowOutlinks(false)
+            return
+        }
+        setShowOutlinks(true)
+        setSummary(null)
+        setSimilarPages([])
+        if (onSimilarPagesFound) onSimilarPagesFound([])
+        await fetchOutlinks(1)
+    }
 
     const handleCopySummary = async () => {
         if (!summary) return
@@ -61,8 +128,9 @@ export function NodeDetailsWindow({
         setError(null)
         setSummary(null)
         setDisplayedText("")
-        setSimilarPages([]) // Clear similar pages when summarizing
-        if (onSimilarPagesFound) onSimilarPagesFound([]) // Reset graph highlighting
+        setSimilarPages([])
+        setShowOutlinks(false)
+        if (onSimilarPagesFound) onSimilarPagesFound([])
 
         try {
             const response = await fetch(`${API_URL}/api/page/summarize?url=${encodeURIComponent(nodeUrl)}`, {
@@ -89,8 +157,9 @@ export function NodeDetailsWindow({
         setIsFindingSimilar(true)
         setError(null)
         setSimilarPages([])
-        setSummary(null) // Clear summary when finding similar
+        setSummary(null)
         setDisplayedText("")
+        setShowOutlinks(false)
 
         try {
             const response = await fetch(`${API_URL}/api/page/similar?url=${encodeURIComponent(nodeUrl)}&limit=10`, {
@@ -104,7 +173,6 @@ export function NodeDetailsWindow({
             const data: SimilarPage[] = await response.json()
             setSimilarPages(data)
 
-            // Notify parent to highlight similar nodes on the graph
             if (onSimilarPagesFound) {
                 onSimilarPagesFound(data)
             }
@@ -124,12 +192,12 @@ export function NodeDetailsWindow({
         const revealInterval = setInterval(() => {
             if (currentIndex <= summary.length) {
                 setDisplayedText(summary.substring(0, currentIndex))
-                currentIndex += 2 // Reveal 2 characters at a time
+                currentIndex += 2
             } else {
                 setIsRevealing(false)
                 clearInterval(revealInterval)
             }
-        }, 20) // Adjust speed here (lower = faster)
+        }, 20)
 
         return () => clearInterval(revealInterval)
     }, [summary, isRevealing])
@@ -189,6 +257,97 @@ export function NodeDetailsWindow({
                     </>
                 )}
             </Button>
+
+            {/* View Outlinks button */}
+            {crawlId && (
+                <Button
+                    onClick={handleViewOutlinks}
+                    disabled={isLoadingOutlinks}
+                    className={`w-full font-medium transition-all ${showOutlinks
+                            ? "bg-orange-500/20 border border-orange-500/50 text-orange-300 hover:bg-orange-500/30"
+                            : "bg-gradient-to-r from-orange-600/90 to-amber-600/90 hover:from-orange-500 hover:to-amber-500 text-white"
+                        }`}
+                >
+                    {isLoadingOutlinks ? (
+                        <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Loading...
+                        </>
+                    ) : (
+                        <>
+                            <Link2 className="w-4 h-4 mr-2" />
+                            {showOutlinks ? "Hide Outlinks" : `View Outlinks${outlinksPagination.total > 0 ? ` (${outlinksPagination.total})` : ""}`}
+                        </>
+                    )}
+                </Button>
+            )}
+
+            {/* Outlinks list */}
+            {showOutlinks && (
+                <div className="bg-orange-950/30 border border-orange-500/20 rounded-lg p-3 backdrop-blur-sm">
+                    {/* Sort toggle and pagination */}
+                    <div className="flex items-center justify-between mb-3">
+                        <button
+                            onClick={() => setSortBy(sortBy === "discovery" ? "pagerank" : "discovery")}
+                            className="flex items-center gap-1 text-xs text-orange-300 hover:text-orange-200 transition-colors"
+                        >
+                            <ArrowUpDown className="w-3 h-3" />
+                            {sortBy === "discovery" ? "By Discovery" : "By PageRank"}
+                        </button>
+                        {outlinksPagination.totalPages > 1 && (
+                            <div className="flex items-center gap-1">
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => fetchOutlinks(outlinksPagination.page - 1)}
+                                    disabled={outlinksPagination.page === 1 || isLoadingOutlinks}
+                                    className="h-6 w-6 p-0 text-orange-400 hover:text-white hover:bg-orange-500/20"
+                                >
+                                    <ChevronLeft className="w-4 h-4" />
+                                </Button>
+                                <span className="text-xs text-orange-400 min-w-[50px] text-center">
+                                    {outlinksPagination.page}/{outlinksPagination.totalPages}
+                                </span>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => fetchOutlinks(outlinksPagination.page + 1)}
+                                    disabled={outlinksPagination.page === outlinksPagination.totalPages || isLoadingOutlinks}
+                                    className="h-6 w-6 p-0 text-orange-400 hover:text-white hover:bg-orange-500/20"
+                                >
+                                    <ChevronRight className="w-4 h-4" />
+                                </Button>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* List of outlinks */}
+                    <div className="space-y-2 max-h-[250px] overflow-y-auto">
+                        {sortedOutlinks.length === 0 ? (
+                            <p className="text-xs text-orange-300/60 text-center py-4">No discovered outlinks</p>
+                        ) : (
+                            sortedOutlinks.map((link) => (
+                                <div
+                                    key={link.url}
+                                    className="flex items-start gap-2 text-xs p-2 rounded bg-orange-500/10 hover:bg-orange-500/20 transition-colors cursor-pointer"
+                                    onClick={() => window.open(link.url, "_blank", "noopener,noreferrer")}
+                                >
+                                    {sortBy === "pagerank" && (
+                                        <span className="text-orange-400 font-mono text-[10px] min-w-[32px]">
+                                            {(link.pagerank * 100).toFixed(1)}
+                                        </span>
+                                    )}
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-white truncate">{link.title || "Untitled"}</p>
+                                        <p className="text-slate-400 truncate text-[10px]">{link.url}</p>
+                                    </div>
+                                    <ExternalLink className="w-3 h-3 text-orange-400/60 flex-shrink-0 mt-0.5" />
+                                </div>
+                            ))
+                        )}
+                    </div>
+                </div>
+            )}
 
             {/* Similar pages results */}
             {similarPages.length > 0 && (

@@ -79,6 +79,20 @@ class WebCrawler:
         if self.msg_count % 10 == 0:
             await asyncio.sleep(0.02)
 
+    async def _broadcast_incoming_links(self, target_url: str):
+        """
+        Broadcast links from already-crawled pages that point to this URL.
+        This handles the case where page A links to page B, but B is crawled after A.
+        """
+        incoming_links = await self.db.get_incoming_links_from_crawled(self.crawl_id, target_url)
+        for source_url in incoming_links:
+            await self._broadcast_throttled(
+                {
+                    "type": "link_created",
+                    "data": {"source": source_url, "target": target_url, "anchor": ""},
+                }
+            )
+
     def _get_headers(self):
         """Génère des headers aléatoires (Mode Ninja)"""
         return {
@@ -274,7 +288,7 @@ class WebCrawler:
 
                     self.pages_crawled += 1
 
-                    # ✅ UTILISATION DU THROTTLING
+                    # ✅ Broadcast the crawled page
                     await self._broadcast_throttled({"type": "page_discovered", "data": page_data.dict()})
 
                     if depth < self.max_depth:
@@ -343,8 +357,7 @@ class WebCrawler:
 
             self.pending_links.append((current_url, target_url))
 
-            # ✅ UTILISATION DU THROTTLING (Critique pour les liens)
-            # Send normalized URLs to match node IDs in frontend
+            # ✅ Broadcast ALL links - Frontend will filter to show only crawled→crawled
             await self._broadcast_throttled(
                 {
                     "type": "link_created",

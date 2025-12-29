@@ -307,3 +307,27 @@ async def find_similar_pages(
     except Exception as e:
         logger.error(f"Error finding similar pages: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+# ========== OUTLINKS ENDPOINT ==========
+
+
+@app.get("/api/crawl/{crawl_id}/page/outlinks")
+async def get_page_outlinks(
+    crawl_id: str,
+    url: str,
+    page: int = 1,
+    per_page: int = 50,
+    _: None = Depends(RateLimiter(limit=30, window=60, key_prefix="page_outlinks")),
+):
+    """
+    Récupère les liens sortants (pages découvertes non-crawlées) d'une page.
+    Retourne le PageRank de chaque page si disponible pour le tri côté frontend.
+    """
+    try:
+        result = await db.get_page_outlinks(crawl_id, url, page, per_page)
+        return result
+    except Exception as e:
+        logger.error(f"Error fetching page outlinks: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+

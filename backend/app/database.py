@@ -560,6 +560,84 @@ class Neo4jDatabase:
 
             return {"has_scores": True, "max_score": round(max_score, 4), "scores": scores}
 
+    async def get_incoming_links_from_crawled(self, crawl_id: str, target_url: str) -> list[str]:
+        """
+        Get URLs of already-crawled pages that link to the target URL.
+        Used for retroactive link broadcasting when a page is crawled.
+        """
+        async with self.driver.session() as session:
+            query = """
+                MATCH (source:Page)-[r:LINKS_TO]->(target:Page {url: $target_url})
+                WHERE r.crawl_id = $crawl_id AND source.status_code > 0
+                RETURN source.url as source_url
+            """
+            result = await session.run(query, crawl_id=crawl_id, target_url=target_url)
+            sources = []
+            async for record in result:
+                sources.append(record["source_url"])
+            return sources
+
+    async def get_page_outlinks(
+        self,
+        crawl_id: str,
+        page_url: str,
+        page: int = 1,
+        per_page: int = 50,
+    ) -> dict:
+        """
+        Récupère les liens sortants (pages découvertes non-crawlées) d'une page avec pagination.
+        Retourne aussi le PageRank de chaque page si disponible.
+        """
+        async with self.driver.session() as session:
+            # Count total discovered links from this page
+            count_query = """
+                MATCH (c:Crawl {crawl_id: $crawl_id})-[:CRAWLED]->(source:Page {url: $page_url})
+                MATCH (source)-[r:LINKS_TO]->(target:Page)
+                WHERE r.crawl_id = $crawl_id AND (target.status_code = 0 OR target.status_code IS NULL)
+                RETURN count(target) as total
+            """
+            count_result = await session.run(count_query, crawl_id=crawl_id, page_url=page_url)
+            count_record = await count_result.single()
+            total = count_record["total"] if count_record else 0
+
+            # Get paginated results with pagerank if available
+            skip = (page - 1) * per_page
+            query = """
+                MATCH (c:Crawl {crawl_id: $crawl_id})-[:CRAWLED]->(source:Page {url: $page_url})
+                MATCH (source)-[r:LINKS_TO]->(target:Page)
+                WHERE r.crawl_id = $crawl_id AND (target.status_code = 0 OR target.status_code IS NULL)
+                OPTIONAL MATCH (c)-[cr:CRAWLED]->(target)
+                RETURN target.url as url, target.title as title, r.discovered_at as discovered_at, cr.pagerank as pagerank
+                ORDER BY r.discovered_at DESC
+                SKIP $skip LIMIT $limit
+            """
+            result = await session.run(
+                query,
+                crawl_id=crawl_id,
+                page_url=page_url,
+                skip=skip,
+                limit=per_page,
+            )
+
+            links = []
+            async for record in result:
+                discovered_at = record["discovered_at"]
+                links.append({
+                    "url": record["url"],
+                    "title": record["title"],
+                    "discovered_at": discovered_at.to_native().isoformat() if discovered_at else None,
+                    "pagerank": round(record["pagerank"], 4) if record["pagerank"] else 0,
+                })
+
+            return {
+                "source_url": page_url,
+                "links": links,
+                "total": total,
+                "page": page,
+                "per_page": per_page,
+                "total_pages": max(1, (total + per_page - 1) // per_page),
+            }
+
     async def close(self):
         await self.driver.close()
 

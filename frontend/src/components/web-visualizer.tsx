@@ -70,6 +70,15 @@ export default function WebVisualizer() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const fgRef = useRef<any>(null)
 
+  // Indexed storage for all links (for filtering crawled→crawled)
+  const allLinksRef = useRef<{
+    bySource: Map<string, { source: string; target: string }[]>
+    byTarget: Map<string, { source: string; target: string }[]>
+  }>({
+    bySource: new Map(),
+    byTarget: new Map(),
+  })
+
   const [selectedNode, setSelectedNode] = useState<Node | null>(null)
 
   useEffect(() => {
@@ -283,6 +292,9 @@ export default function WebVisualizer() {
         setIsCrawling(true)
         setNodes([{ id: cleanSeedUrl, url: cleanSeedUrl, status: "discovered", x: 0, y: 0 }])
         setLinks([])
+        // Reset indexed link storage for new crawl
+        allLinksRef.current.bySource.clear()
+        allLinksRef.current.byTarget.clear()
 
         // Envoyer un ping toutes les 20 secondes pour garder la connexion vivante
         pingInterval = setInterval(() => {
@@ -301,6 +313,8 @@ export default function WebVisualizer() {
 
           if (message.type === "page_discovered") {
             const pageUrl = normalizeUrl(message.data.url)
+
+            // Add or update the crawled node
             setNodes((prev) => {
               const node = prev.find((n) => n.id === pageUrl)
               if (node) {
@@ -310,40 +324,77 @@ export default function WebVisualizer() {
               }
               return [...prev, { id: pageUrl, url: pageUrl, title: message.data.title, status: "crawled" }]
             })
+
+            // Activate pending links that now have both endpoints crawled
+            setLinks((prevLinks) => {
+              setNodes((currentNodes) => {
+                const crawledIds = new Set(currentNodes.filter(n => n.status === "crawled").map(n => n.id))
+                crawledIds.add(pageUrl) // Include the new crawled node
+
+                // Find links from/to this node where the other end is also crawled
+                const linksFromNode = allLinksRef.current.bySource.get(pageUrl) || []
+                const linksToNode = allLinksRef.current.byTarget.get(pageUrl) || []
+                const allPendingLinks = [...linksFromNode, ...linksToNode]
+
+                const newLinks = allPendingLinks.filter(link => {
+                  // Check if both ends are crawled
+                  if (!crawledIds.has(link.source) || !crawledIds.has(link.target)) return false
+                  // Check if link already exists
+                  const exists = prevLinks.some(l => {
+                    const sId = typeof l.source === "object" ? (l.source as Node).id : l.source
+                    const tId = typeof l.target === "object" ? (l.target as Node).id : l.target
+                    return sId === link.source && tId === link.target
+                  })
+                  return !exists
+                })
+
+                if (newLinks.length > 0) {
+                  setLinks(prev => [...prev, ...newLinks])
+                }
+
+                return currentNodes
+              })
+              return prevLinks
+            })
           } else if (message.type === "link_created") {
             const source = normalizeUrl(message.data.source)
             const target = normalizeUrl(message.data.target)
             if (!source || !target || source === target) return
 
-            setNodes((prev) => {
-              const newNodes = []
-              const sourceNode = prev.find((n) => n.id === source)
-              if (!sourceNode) newNodes.push({ id: source, url: source, status: "discovered" as const })
+            // Store link in indexed storage for later activation
+            const linkData = { source, target }
+            const bySource = allLinksRef.current.bySource
+            const byTarget = allLinksRef.current.byTarget
 
-              const targetExists = prev.find((n) => n.id === target)
-              if (!targetExists) {
-                const baseX = sourceNode?.x !== undefined ? sourceNode.x : 0
-                const baseY = sourceNode?.y !== undefined ? sourceNode.y : 0
-                const spawnX = baseX + (Math.random() - 0.5) * 10
-                const spawnY = baseY + (Math.random() - 0.5) * 10
-                newNodes.push({ id: target, url: target, status: "discovered" as const, x: spawnX, y: spawnY })
-              }
-              if (newNodes.length > 0) {
-                return [...prev, ...newNodes]
-              }
-              return prev
-            })
+            if (!bySource.has(source)) bySource.set(source, [])
+            if (!byTarget.has(target)) byTarget.set(target, [])
 
-            setLinks((prev) => {
-              const linkExists = prev.find((l) => {
-                const sId = typeof l.source === "object" ? (l.source as Node).id : l.source
-                const tId = typeof l.target === "object" ? (l.target as Node).id : l.target
-                return sId === source && tId === target
-              })
-              if (!linkExists) {
-                return [...prev, { source, target }]
+            // Check if already stored
+            const existsInIndex = bySource.get(source)!.some(l => l.target === target)
+            if (!existsInIndex) {
+              bySource.get(source)!.push(linkData)
+              byTarget.get(target)!.push(linkData)
+            }
+
+            // Only display if both nodes are already crawled
+            setNodes((currentNodes) => {
+              const sourceNode = currentNodes.find(n => n.id === source && n.status === "crawled")
+              const targetNode = currentNodes.find(n => n.id === target && n.status === "crawled")
+
+              if (sourceNode && targetNode) {
+                setLinks((prev) => {
+                  const linkExists = prev.find((l) => {
+                    const sId = typeof l.source === "object" ? (l.source as Node).id : l.source
+                    const tId = typeof l.target === "object" ? (l.target as Node).id : l.target
+                    return sId === source && tId === target
+                  })
+                  if (!linkExists) {
+                    return [...prev, { source, target }]
+                  }
+                  return prev
+                })
               }
-              return prev
+              return currentNodes
             })
           } else if (message.type === "crawl_completed") {
             setIsCrawling(false)
@@ -512,7 +563,7 @@ export default function WebVisualizer() {
       {selectedNode && (
         <DraggableWindow
           title="Page Details"
-          defaultPosition={{ x: window.innerWidth / 2 - 200, y: window.innerHeight / 2 - 200 }}
+          defaultPosition={{ x: window.innerWidth - 500, y: window.innerHeight / 2 }}
           width={450}
           onClose={() => {
             setClickedNode(null)
@@ -523,6 +574,7 @@ export default function WebVisualizer() {
           <NodeDetailsWindow
             nodeUrl={selectedNode.url}
             nodeTitle={selectedNode.title}
+            crawlId={currentCrawlId || crawlIdFromUrl}
             onClose={() => {
               setClickedNode(null)
               setSelectedNode(null)
