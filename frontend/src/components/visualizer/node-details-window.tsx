@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
-import { ExternalLink, FileText, Loader2, Target, Copy, Check, Link2, ChevronLeft, ChevronRight, ArrowUpDown } from "lucide-react"
+import { useState, useEffect } from "react"
+import { ExternalLink, FileText, Loader2, Target, Copy, Check, Link2, ChevronLeft, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 interface SimilarPage {
@@ -14,7 +14,6 @@ interface OutlinkPage {
     url: string
     title: string | null
     discovered_at: string | null
-    pagerank: number
 }
 
 interface NodeDetailsWindowProps {
@@ -55,16 +54,6 @@ export function NodeDetailsWindow({
         totalPages: 1,
         perPage: 50,
     })
-    const [sortBy, setSortBy] = useState<"discovery" | "pagerank">("discovery")
-
-    // Sort outlinks based on sortBy
-    const sortedOutlinks = useMemo(() => {
-        if (sortBy === "pagerank") {
-            return [...outlinks].sort((a, b) => b.pagerank - a.pagerank)
-        }
-        // Default: discovery order (already sorted by API)
-        return outlinks
-    }, [outlinks, sortBy])
 
     const fetchOutlinks = async (pageNum: number = 1) => {
         if (!crawlId) return
@@ -264,8 +253,8 @@ export function NodeDetailsWindow({
                     onClick={handleViewOutlinks}
                     disabled={isLoadingOutlinks}
                     className={`w-full font-medium transition-all ${showOutlinks
-                            ? "bg-orange-500/20 border border-orange-500/50 text-orange-300 hover:bg-orange-500/30"
-                            : "bg-gradient-to-r from-orange-600/90 to-amber-600/90 hover:from-orange-500 hover:to-amber-500 text-white"
+                        ? "bg-orange-500/20 border border-orange-500/50 text-orange-300 hover:bg-orange-500/30"
+                        : "bg-gradient-to-r from-orange-600/90 to-amber-600/90 hover:from-orange-500 hover:to-amber-500 text-white"
                         }`}
                 >
                     {isLoadingOutlinks ? (
@@ -285,15 +274,7 @@ export function NodeDetailsWindow({
             {/* Outlinks list */}
             {showOutlinks && (
                 <div className="bg-orange-950/30 border border-orange-500/20 rounded-lg p-3 backdrop-blur-sm">
-                    {/* Sort toggle and pagination */}
                     <div className="flex items-center justify-between mb-3">
-                        <button
-                            onClick={() => setSortBy(sortBy === "discovery" ? "pagerank" : "discovery")}
-                            className="flex items-center gap-1 text-xs text-orange-300 hover:text-orange-200 transition-colors"
-                        >
-                            <ArrowUpDown className="w-3 h-3" />
-                            {sortBy === "discovery" ? "By Discovery" : "By PageRank"}
-                        </button>
                         {outlinksPagination.totalPages > 1 && (
                             <div className="flex items-center gap-1">
                                 <Button
@@ -323,20 +304,15 @@ export function NodeDetailsWindow({
 
                     {/* List of outlinks */}
                     <div className="space-y-2 max-h-[250px] overflow-y-auto">
-                        {sortedOutlinks.length === 0 ? (
+                        {outlinks.length === 0 ? (
                             <p className="text-xs text-orange-300/60 text-center py-4">No discovered outlinks</p>
                         ) : (
-                            sortedOutlinks.map((link) => (
+                            outlinks.map((link) => (
                                 <div
                                     key={link.url}
                                     className="flex items-start gap-2 text-xs p-2 rounded bg-orange-500/10 hover:bg-orange-500/20 transition-colors cursor-pointer"
                                     onClick={() => window.open(link.url, "_blank", "noopener,noreferrer")}
                                 >
-                                    {sortBy === "pagerank" && (
-                                        <span className="text-orange-400 font-mono text-[10px] min-w-[32px]">
-                                            {(link.pagerank * 100).toFixed(1)}
-                                        </span>
-                                    )}
                                     <div className="flex-1 min-w-0">
                                         <p className="text-white truncate">{link.title || "Untitled"}</p>
                                         <p className="text-slate-400 truncate text-[10px]">{link.url}</p>

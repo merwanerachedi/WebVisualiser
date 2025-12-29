@@ -96,6 +96,14 @@ export default function WebVisualizer() {
       if (response.ok) {
         const data = await response.json()
 
+        // DEBUG: Log what we received from API
+        console.log("🔍 Graph data received:", {
+          nodesCount: data.nodes.length,
+          edgesCount: data.edges.length,
+          firstNode: data.nodes[0],
+          firstEdge: data.edges[0],
+        })
+
         // Convertir les données de l'API en format attendu
         const loadedNodes: Node[] = data.nodes.map((n: { id: string; label: string; status: number }) => ({
           id: n.id,

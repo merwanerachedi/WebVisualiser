@@ -282,22 +282,24 @@ class Neo4jDatabase:
                 MATCH (source:Page {url: $source_url})
                 MATCH (target:Page {url: $target_url})
                 MERGE (source)-[r:LINKS_TO]->(target)
-                ON CREATE SET r.anchor_text = $anchor_text, r.discovered_at = datetime(), r.crawl_id = $crawl_id, r.link_type = $link_type
+                ON CREATE SET r.anchor_text = $anchor_text, r.discovered_at = datetime(), r.link_type = $link_type
             """
             await session.run(query, source_url=source_url, target_url=target_url, **link_data)
 
-    async def link_crawl_to_page(self, crawl_id: str, page_url: str):
+    async def link_crawl_to_page(self, crawl_id: str, page_url: str, status_code: int = 0):
         """
         Crée la relation [:CRAWLED] entre un Crawl et une Page.
-        Cette relation permet de savoir quelles pages appartiennent à quel crawl.
+        Stocke le status_code sur la relation (pas sur la Page) pour avoir un status par crawl.
         """
         async with self.driver.session() as session:
             query = """
                 MATCH (c:Crawl {crawl_id: $crawl_id})
                 MATCH (p:Page {url: $page_url})
-                MERGE (c)-[:CRAWLED]->(p)
+                MERGE (c)-[r:CRAWLED]->(p)
+                ON CREATE SET r.status_code = $status_code
+                ON MATCH SET r.status_code = $status_code
             """
-            await session.run(query, crawl_id=crawl_id, page_url=page_url)
+            await session.run(query, crawl_id=crawl_id, page_url=page_url, status_code=status_code)
 
     async def update_redirect_link(self, source_url, old_target, final_target, crawl_id):
         async with self.driver.session() as session:
@@ -340,43 +342,52 @@ class Neo4jDatabase:
             )
 
     async def get_crawl_graph(self, crawl_id: str):
-        """Récupère le graphe d'un crawl en filtrant les pages de redirection."""
+        """
+        Récupère le graphe d'un crawl.
+        - Retourne uniquement les pages crawlées (status_code > 0 sur la relation [:CRAWLED])
+        - Retourne les liens entre pages crawlées uniquement
+        """
         async with self.driver.session() as session:
-            # Filtrer les pages avec content_type = 'redirect'
+            # Get all crawled nodes (status_code > 0 on the CRAWLED relation)
             query = """
-                MATCH (c:Crawl {crawl_id: $crawl_id})-[:CRAWLED]->(p:Page)
-                WHERE p.status_code <> 301
-                OPTIONAL MATCH (p)-[r:LINKS_TO]->(target:Page)
-                WHERE target.status_code <> 301
-                RETURN p, r, target
+                MATCH (c:Crawl {crawl_id: $crawl_id})-[cr:CRAWLED]->(p:Page)
+                WHERE cr.status_code > 0 AND cr.status_code <> 301
+                RETURN p.url as url, p.title as title, cr.status_code as status_code
             """
             result = await session.run(query, crawl_id=crawl_id)
+
             nodes = []
-            edges = []
-            seen_nodes = set()
+            crawled_urls = set()
             async for record in result:
-                page = record["p"]
-                if page["url"] not in seen_nodes:
-                    nodes.append(
-                        {
-                            "id": page["url"],
-                            "label": page.get("title", page["url"]),
-                            "status": page.get("status_code", 0),
-                        }
-                    )
-                    seen_nodes.add(page["url"])
-                if record["r"] and record["target"]:
-                    target = record["target"]
-                    if target["url"] not in seen_nodes:
-                        nodes.append(
-                            {
-                                "id": target["url"],
-                                "label": target.get("title", target["url"]),
-                                "status": target.get("status_code", 0),
-                            }
-                        )
-                        seen_nodes.add(target["url"])
-                    edges.append({"source": page["url"], "target": target["url"]})
+                nodes.append(
+                    {
+                        "id": record["url"],
+                        "label": record["title"] or record["url"],
+                        "status": record["status_code"],
+                    }
+                )
+                crawled_urls.add(record["url"])
+
+            # Get links between crawled nodes only
+            edges_query = """
+                MATCH (c:Crawl {crawl_id: $crawl_id})-[cr1:CRAWLED]->(source:Page)-[r:LINKS_TO]->(target:Page)<-[cr2:CRAWLED]-(c)
+                WHERE cr1.status_code > 0 AND cr1.status_code <> 301
+                  AND cr2.status_code > 0 AND cr2.status_code <> 301
+                RETURN DISTINCT source.url as source, target.url as target
+            """
+            edges_result = await session.run(edges_query, crawl_id=crawl_id)
+
+            edges = []
+            async for record in edges_result:
+                edges.append({"source": record["source"], "target": record["target"]})
+
+            # DEBUG: Log what we're returning
+            logger.info(f"🔍 get_crawl_graph({crawl_id}): {len(nodes)} nodes, {len(edges)} edges")
+            if len(nodes) > 0:
+                logger.info(f"   First node: {nodes[0]}")
+            if len(edges) > 0:
+                logger.info(f"   First edge: {edges[0]}")
+
             return {"nodes": nodes, "edges": edges}
 
     # ✅ NOUVELLE MÉTHODE : RECHERCHE SÉMANTIQUE
@@ -563,12 +574,12 @@ class Neo4jDatabase:
     async def get_incoming_links_from_crawled(self, crawl_id: str, target_url: str) -> list[str]:
         """
         Get URLs of already-crawled pages that link to the target URL.
-        Used for retroactive link broadcasting when a page is crawled.
+        Uses CRAWLED relation to determine crawl membership.
         """
         async with self.driver.session() as session:
             query = """
-                MATCH (source:Page)-[r:LINKS_TO]->(target:Page {url: $target_url})
-                WHERE r.crawl_id = $crawl_id AND source.status_code > 0
+                MATCH (c:Crawl {crawl_id: $crawl_id})-[cr:CRAWLED]->(source:Page)-[:LINKS_TO]->(target:Page {url: $target_url})
+                WHERE cr.status_code > 0 AND cr.status_code <> 301
                 RETURN source.url as source_url
             """
             result = await session.run(query, crawl_id=crawl_id, target_url=target_url)
@@ -590,11 +601,16 @@ class Neo4jDatabase:
         """
         async with self.driver.session() as session:
             # Count total discovered links from this page
+            # A page is "discovered" if it's linked but NOT crawled (no CRAWLED relation with status > 0)
             count_query = """
-                MATCH (c:Crawl {crawl_id: $crawl_id})-[:CRAWLED]->(source:Page {url: $page_url})
-                MATCH (source)-[r:LINKS_TO]->(target:Page)
-                WHERE r.crawl_id = $crawl_id AND (target.status_code = 0 OR target.status_code IS NULL)
-                RETURN count(target) as total
+                MATCH (c:Crawl {crawl_id: $crawl_id})-[cr:CRAWLED]->(source:Page {url: $page_url})
+                WHERE cr.status_code > 0 AND cr.status_code <> 301
+                MATCH (source)-[:LINKS_TO]->(target:Page)
+                WHERE NOT EXISTS {
+                    MATCH (c)-[cr2:CRAWLED]->(target)
+                    WHERE cr2.status_code > 0 AND cr2.status_code <> 301
+                }
+                RETURN count(DISTINCT target) as total
             """
             count_result = await session.run(count_query, crawl_id=crawl_id, page_url=page_url)
             count_record = await count_result.single()
@@ -603,11 +619,14 @@ class Neo4jDatabase:
             # Get paginated results with pagerank if available
             skip = (page - 1) * per_page
             query = """
-                MATCH (c:Crawl {crawl_id: $crawl_id})-[:CRAWLED]->(source:Page {url: $page_url})
+                MATCH (c:Crawl {crawl_id: $crawl_id})-[cr:CRAWLED]->(source:Page {url: $page_url})
+                WHERE cr.status_code > 0 AND cr.status_code <> 301
                 MATCH (source)-[r:LINKS_TO]->(target:Page)
-                WHERE r.crawl_id = $crawl_id AND (target.status_code = 0 OR target.status_code IS NULL)
-                OPTIONAL MATCH (c)-[cr:CRAWLED]->(target)
-                RETURN target.url as url, target.title as title, r.discovered_at as discovered_at, cr.pagerank as pagerank
+                WHERE NOT EXISTS {
+                    MATCH (c)-[cr2:CRAWLED]->(target)
+                    WHERE cr2.status_code > 0 AND cr2.status_code <> 301
+                }
+                RETURN DISTINCT target.url as url, target.title as title, r.discovered_at as discovered_at
                 ORDER BY r.discovered_at DESC
                 SKIP $skip LIMIT $limit
             """
@@ -627,7 +646,6 @@ class Neo4jDatabase:
                         "url": record["url"],
                         "title": record["title"],
                         "discovered_at": discovered_at.to_native().isoformat() if discovered_at else None,
-                        "pagerank": round(record["pagerank"], 4) if record["pagerank"] else 0,
                     }
                 )
 
