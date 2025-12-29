@@ -622,12 +622,14 @@ class Neo4jDatabase:
             links = []
             async for record in result:
                 discovered_at = record["discovered_at"]
-                links.append({
-                    "url": record["url"],
-                    "title": record["title"],
-                    "discovered_at": discovered_at.to_native().isoformat() if discovered_at else None,
-                    "pagerank": round(record["pagerank"], 4) if record["pagerank"] else 0,
-                })
+                links.append(
+                    {
+                        "url": record["url"],
+                        "title": record["title"],
+                        "discovered_at": discovered_at.to_native().isoformat() if discovered_at else None,
+                        "pagerank": round(record["pagerank"], 4) if record["pagerank"] else 0,
+                    }
+                )
 
             return {
                 "source_url": page_url,

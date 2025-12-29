@@ -330,4 +330,3 @@ async def get_page_outlinks(
     except Exception as e:
         logger.error(f"Error fetching page outlinks: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from e
-
