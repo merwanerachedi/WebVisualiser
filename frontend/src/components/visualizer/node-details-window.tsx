@@ -19,7 +19,7 @@ interface OutlinkPage {
 interface NodeDetailsWindowProps {
     nodeUrl: string
     nodeTitle?: string
-    crawlId?: string | null  // Added for outlinks API
+    crawlId?: string | null // Added for outlinks API
     onClose: () => void
     onSimilarPagesFound?: (pages: SimilarPage[]) => void
     onHoverSimilarPage?: (url: string | null) => void
@@ -55,13 +55,13 @@ export function NodeDetailsWindow({
         perPage: 50,
     })
 
-    const fetchOutlinks = async (pageNum: number = 1) => {
+    const fetchOutlinks = async (pageNum = 1) => {
         if (!crawlId) return
         setIsLoadingOutlinks(true)
         try {
             const response = await fetch(
                 `${API_URL}/api/crawl/${crawlId}/page/outlinks?url=${encodeURIComponent(nodeUrl)}&page=${pageNum}&per_page=50`,
-                { credentials: "include" }
+                { credentials: "include" },
             )
             if (response.ok) {
                 const data = await response.json()
@@ -253,8 +253,8 @@ export function NodeDetailsWindow({
                     onClick={handleViewOutlinks}
                     disabled={isLoadingOutlinks}
                     className={`w-full font-medium transition-all ${showOutlinks
-                        ? "bg-orange-500/20 border border-orange-500/50 text-orange-300 hover:bg-orange-500/30"
-                        : "bg-gradient-to-r from-orange-600/90 to-amber-600/90 hover:from-orange-500 hover:to-amber-500 text-white"
+                            ? "bg-indigo-500/20 border border-indigo-500/50 text-indigo-300 hover:bg-indigo-500/30"
+                            : "bg-gradient-to-r from-indigo-600/90 to-purple-600/90 hover:from-indigo-500 hover:to-purple-500 text-white"
                         }`}
                 >
                     {isLoadingOutlinks ? (
@@ -265,7 +265,9 @@ export function NodeDetailsWindow({
                     ) : (
                         <>
                             <Link2 className="w-4 h-4 mr-2" />
-                            {showOutlinks ? "Hide Outlinks" : `View Outlinks${outlinksPagination.total > 0 ? ` (${outlinksPagination.total})` : ""}`}
+                            {showOutlinks
+                                ? "Hide Outlinks"
+                                : `View Outlinks${outlinksPagination.total > 0 ? ` (${outlinksPagination.total})` : ""}`}
                         </>
                     )}
                 </Button>
@@ -273,7 +275,7 @@ export function NodeDetailsWindow({
 
             {/* Outlinks list */}
             {showOutlinks && (
-                <div className="bg-orange-950/30 border border-orange-500/20 rounded-lg p-3 backdrop-blur-sm">
+                <div className="bg-indigo-950/30 border border-indigo-500/20 rounded-lg p-3 backdrop-blur-sm">
                     <div className="flex items-center justify-between mb-3">
                         {outlinksPagination.totalPages > 1 && (
                             <div className="flex items-center gap-1">
@@ -282,11 +284,11 @@ export function NodeDetailsWindow({
                                     size="sm"
                                     onClick={() => fetchOutlinks(outlinksPagination.page - 1)}
                                     disabled={outlinksPagination.page === 1 || isLoadingOutlinks}
-                                    className="h-6 w-6 p-0 text-orange-400 hover:text-white hover:bg-orange-500/20"
+                                    className="h-6 w-6 p-0 text-indigo-400 hover:text-white hover:bg-indigo-500/20"
                                 >
                                     <ChevronLeft className="w-4 h-4" />
                                 </Button>
-                                <span className="text-xs text-orange-400 min-w-[50px] text-center">
+                                <span className="text-xs text-indigo-400 min-w-[50px] text-center">
                                     {outlinksPagination.page}/{outlinksPagination.totalPages}
                                 </span>
                                 <Button
@@ -294,7 +296,7 @@ export function NodeDetailsWindow({
                                     size="sm"
                                     onClick={() => fetchOutlinks(outlinksPagination.page + 1)}
                                     disabled={outlinksPagination.page === outlinksPagination.totalPages || isLoadingOutlinks}
-                                    className="h-6 w-6 p-0 text-orange-400 hover:text-white hover:bg-orange-500/20"
+                                    className="h-6 w-6 p-0 text-indigo-400 hover:text-white hover:bg-indigo-500/20"
                                 >
                                     <ChevronRight className="w-4 h-4" />
                                 </Button>
@@ -305,19 +307,19 @@ export function NodeDetailsWindow({
                     {/* List of outlinks */}
                     <div className="space-y-2 max-h-[250px] overflow-y-auto">
                         {outlinks.length === 0 ? (
-                            <p className="text-xs text-orange-300/60 text-center py-4">No discovered outlinks</p>
+                            <p className="text-xs text-indigo-300/60 text-center py-4">No discovered outlinks</p>
                         ) : (
                             outlinks.map((link) => (
                                 <div
                                     key={link.url}
-                                    className="flex items-start gap-2 text-xs p-2 rounded bg-orange-500/10 hover:bg-orange-500/20 transition-colors cursor-pointer"
+                                    className="flex items-start gap-2 text-xs p-2 rounded bg-indigo-500/10 hover:bg-indigo-500/20 transition-colors cursor-pointer"
                                     onClick={() => window.open(link.url, "_blank", "noopener,noreferrer")}
                                 >
                                     <div className="flex-1 min-w-0">
                                         <p className="text-white truncate">{link.title || "Untitled"}</p>
                                         <p className="text-slate-400 truncate text-[10px]">{link.url}</p>
                                     </div>
-                                    <ExternalLink className="w-3 h-3 text-orange-400/60 flex-shrink-0 mt-0.5" />
+                                    <ExternalLink className="w-3 h-3 text-indigo-400/60 flex-shrink-0 mt-0.5" />
                                 </div>
                             ))
                         )}

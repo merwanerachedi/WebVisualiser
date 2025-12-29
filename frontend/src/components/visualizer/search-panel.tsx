@@ -28,15 +28,17 @@ export function SearchPanel({ searchQuery, setSearchQuery, isSearching, onSearch
         <button
           onClick={onSearch}
           disabled={!searchQuery.trim() || isSearching}
-          className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+          className="flex items-center gap-2 rounded-lg bg-teal-600 px-4 py-2 font-medium text-white hover:bg-teal-700 disabled:opacity-50"
         >
           <Search className="h-4 w-4" />
           {isSearching ? "Searching..." : "Search"}
         </button>
       </div>
       <div className="mt-3 text-xs text-white/60 text-center">
-        High relevance: <span className="inline-block w-3 h-3 rounded-full bg-[#166534] align-middle"></span> Green •
-        Medium relevance: <span className="inline-block w-3 h-3 rounded-full bg-[#dc2626] align-middle ml-1"></span> Red
+        High relevance: <span className="inline-block w-3 h-3 rounded-full bg-[#8b5cf6] align-middle"></span> Purple
+        <span className="mx-3">•</span>
+        Medium relevance: <span className="inline-block w-3 h-3 rounded-full bg-[#ec4899] align-middle ml-1"></span>{" "}
+        Pink
       </div>
     </>
   )

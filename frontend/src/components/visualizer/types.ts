@@ -32,7 +32,7 @@ export interface WebSocketMessage {
 export interface CrawlConfig {
   max_depth: number
   max_pages: number
-  crawl_mode: "INTERNAL" | "EXTERNAL"
+  crawl_mode: "INTERNAL" | "EXTERNAL" | "ALL"
   algorithm: "BFS" | "DFS"
 }
 

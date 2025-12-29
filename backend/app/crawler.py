@@ -348,7 +348,6 @@ class WebCrawler:
             # NOTE: On ne crée PAS la relation CRAWLED ici (découverte)
             # Elle sera créée avec le bon status_code quand la page sera crawlée
 
-
             await self.db.create_link(
                 source_url=current_url,
                 target_url=target_url,
