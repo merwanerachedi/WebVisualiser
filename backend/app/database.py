@@ -25,8 +25,8 @@ class Neo4jDatabase:
             uri,
             auth=(user, password),
             max_connection_lifetime=300,  # Recréer la connexion toutes les 300s
-            keep_alive=True,              # Garder le TCP actif (Ping régulier)
-            liveness_check_timeout=2.0    # Vérifier si la connexion est vivante avant d'envoyer
+            keep_alive=True,  # Garder le TCP actif (Ping régulier)
+            liveness_check_timeout=2.0,  # Vérifier si la connexion est vivante avant d'envoyer
         )
 
         # ✅ CHARGEMENT DU MODÈLE IA (Se fait une seule fois au démarrage)
