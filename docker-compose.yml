@@ -61,9 +61,10 @@ services:
       ports:
         - "3000:3000"  # CHANGÉ : Next.js utilise le port 3000 par défaut
       environment:
-        # CHANGÉ : Next.js nécessite le préfixe 'NEXT_PUBLIC_' pour être visible côté navigateur
-        - NEXT_PUBLIC_API_URL=http://localhost:8000
-        - NEXT_PUBLIC_WS_URL=ws://localhost:8000
+        # Pour pointer vers Render, utilise les variables du .env
+        # Pour dev local, mets: http://localhost:8000 et ws://localhost:8000
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+        - NEXT_PUBLIC_WS_URL=${NEXT_PUBLIC_WS_URL:-ws://localhost:8000}
       volumes:
         - ./frontend:/app
         - /app/node_modules # CRUCIAL : Garde les dépendances Linux du conteneur

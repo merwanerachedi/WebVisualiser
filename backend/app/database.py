@@ -21,7 +21,13 @@ class Neo4jDatabase:
             logger.error("❌ CRITIQUE : Variable AURADB_PASSWORD introuvable dans le fichier .env !")
             raise ValueError("AURADB_PASSWORD is missing from .env file")
 
-        self.driver = AsyncGraphDatabase.driver(uri, auth=(user, password))
+        self.driver = AsyncGraphDatabase.driver(
+            uri,
+            auth=(user, password),
+            max_connection_lifetime=300,  # Recréer la connexion toutes les 300s
+            keep_alive=True,              # Garder le TCP actif (Ping régulier)
+            liveness_check_timeout=2.0    # Vérifier si la connexion est vivante avant d'envoyer
+        )
 
         # ✅ CHARGEMENT DU MODÈLE IA (Se fait une seule fois au démarrage)
         logger.info("🧠 Chargement du modèle d'embedding (ça peut prendre quelques secondes)...")
