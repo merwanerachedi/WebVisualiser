@@ -1,5 +1,6 @@
 # backend/app/auth_routes.py
 import logging
+import os
 import uuid
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
@@ -20,6 +21,12 @@ from .redis_cache import cache
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+# Cookie settings based on environment
+# Set ENVIRONMENT=production on Render
+IS_PRODUCTION = os.getenv("ENVIRONMENT", "development") == "production"
+COOKIE_SECURE = IS_PRODUCTION  # True in prod (HTTPS), False in dev (HTTP)
+COOKIE_SAMESITE = "none" if IS_PRODUCTION else "lax"
 
 
 @router.post("/register", response_model=UserResponse)
@@ -89,16 +96,16 @@ async def login(
         key="access_token",
         value=access_token,
         httponly=True,
-        secure=True,  # Required for HTTPS (Render)
-        samesite="none",  # Required for cross-origin cookies
+        secure=COOKIE_SECURE,
+        samesite=COOKIE_SAMESITE,
         max_age=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
     )
     response.set_cookie(
         key="refresh_token",
         value=f"{user['user_id']}:{refresh_token}",
         httponly=True,
-        secure=True,
-        samesite="none",
+        secure=COOKIE_SECURE,
+        samesite=COOKIE_SAMESITE,
         max_age=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
     )
 
@@ -149,8 +156,8 @@ async def refresh_token(response: Response, refresh_token: str | None = Cookie(d
         key="access_token",
         value=new_access_token,
         httponly=True,
-        secure=True,
-        samesite="none",
+        secure=COOKIE_SECURE,
+        samesite=COOKIE_SAMESITE,
         max_age=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
     )
 
