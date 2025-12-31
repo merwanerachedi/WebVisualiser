@@ -3,8 +3,8 @@ import logging
 import os
 
 from dotenv import load_dotenv
+from fastembed import TextEmbedding
 from neo4j import AsyncGraphDatabase
-from sentence_transformers import SentenceTransformer  # 👈 IMPORT IA
 
 load_dotenv()
 
@@ -25,7 +25,7 @@ class Neo4jDatabase:
 
         # ✅ CHARGEMENT DU MODÈLE IA (Se fait une seule fois au démarrage)
         logger.info("🧠 Chargement du modèle d'embedding (ça peut prendre quelques secondes)...")
-        self.model = SentenceTransformer("all-MiniLM-L6-v2")
+        self.model = TextEmbedding(model_name="sentence-transformers/all-MiniLM-L6-v2")
         logger.info("🧠 Modèle chargé et prêt !")
 
     async def verify_connection(self):
@@ -251,7 +251,7 @@ class Neo4jDatabase:
         if text_content:
             try:
                 # .tolist() est important car Neo4j ne comprend pas les formats Numpy
-                embedding = self.model.encode(text_content).tolist()
+                embedding = list(self.model.embed([text_content]))[0].tolist()
             except Exception as e:
                 logger.error(f"Erreur vectorisation pour {url}: {e}")
 

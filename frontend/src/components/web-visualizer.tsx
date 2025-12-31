@@ -15,6 +15,7 @@ import { NodeDetailsWindow } from "./visualizer/node-details-window"
 import type { Node, Link, WebSocketMessage, CrawlConfig, SearchResult } from "./visualizer/types"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000"
 
 const normalizeUrl = (url: string | undefined) => {
   if (!url) return ""
@@ -236,7 +237,7 @@ export default function WebVisualizer() {
 
     setIsSearching(true)
     try {
-      const response = await fetch(`http://localhost:8000/api/search?q=${encodeURIComponent(searchQuery)}`)
+      const response = await fetch(`${API_URL}/api/search?q=${encodeURIComponent(searchQuery)}`)
       if (!response.ok) throw new Error("Search failed")
 
       const results: SearchResult[] = await response.json()
@@ -271,7 +272,7 @@ export default function WebVisualizer() {
     setRateLimitError(null)
 
     try {
-      const resp = await fetch("http://localhost:8000/api/crawl", {
+      const resp = await fetch(`${API_URL}/api/crawl`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -290,7 +291,7 @@ export default function WebVisualizer() {
       const crawlId = data.crawl_id
       setCurrentCrawlId(crawlId) // Store for analytics
 
-      const ws = new WebSocket(`ws://localhost:8000/ws/${crawlId}`)
+      const ws = new WebSocket(`${WS_URL}/ws/${crawlId}`)
 
       // Variable pour stocker l'intervalle de ping
       let pingInterval: NodeJS.Timeout | null = null
