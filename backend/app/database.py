@@ -13,13 +13,13 @@ logger = logging.getLogger(__name__)
 
 class Neo4jDatabase:
     def __init__(self):
-        uri = os.getenv("NEO4J_URI", "bolt://localhost:7687")
-        user = os.getenv("NEO4J_USER", "neo4j")
-        password = os.getenv("NEO4J_PASSWORD")
+        uri = os.getenv("AURADB_URI")
+        user = os.getenv("AURADB_USER")
+        password = os.getenv("AURADB_PASSWORD")
 
         if not password:
-            logger.error("❌ CRITIQUE : Variable NEO4J_PASSWORD introuvable dans le fichier .env !")
-            raise ValueError("NEO4J_PASSWORD is missing from .env file")
+            logger.error("❌ CRITIQUE : Variable AURADB_PASSWORD introuvable dans le fichier .env !")
+            raise ValueError("AURADB_PASSWORD is missing from .env file")
 
         self.driver = AsyncGraphDatabase.driver(uri, auth=(user, password))
 
@@ -34,6 +34,8 @@ class Neo4jDatabase:
             logger.info("Verifying Neo4j connection...")
             await self.driver.verify_connectivity()
             await self._setup_constraints()
+            async with self.driver.session() as session:
+                await self._create_vector_index(session)
             logger.info("✅ Neo4j connection established and verified.")
         except Exception as e:
             logger.error(f"❌ Failed to connect to Neo4j: {e}")
@@ -50,7 +52,26 @@ class Neo4jDatabase:
             )
             await session.run("CREATE INDEX page_domain IF NOT EXISTS FOR (p:Page) ON (p.domain)")
 
-            # Note: L'index vectoriel doit être créé manuellement (ce que tu as déjà fait)
+    async def _create_vector_index(self, session):
+        """Crée l'index vectoriel pour la recherche sémantique s'il n'existe pas."""
+        logger.info("🔍 Vérification de l'index vectoriel 'page_embeddings'...")
+
+        # Attention : la dimension doit correspondre à ton modèle 'all-MiniLM-L6-v2' qui fait 384 dimensions
+        query = """
+        CREATE VECTOR INDEX `page_embeddings` IF NOT EXISTS
+        FOR (n:Page)
+        ON (n.embedding)
+        OPTIONS {indexConfig: {
+          `vector.dimensions`: 384,
+          `vector.similarity_function`: 'cosine'
+        }}
+        """
+        try:
+            await session.run(query)
+            logger.info("✅ Index vectoriel 'page_embeddings' (384 dims) vérifié/créé.")
+        except Exception as e:
+            # On log l'erreur mais on ne bloque pas tout si l'index plante (ex: version Neo4j trop vieille)
+            logger.error(f"⚠️ Erreur lors de la création de l'index vectoriel : {e}")
 
     # ========== USER METHODS ==========
 
@@ -172,6 +193,7 @@ class Neo4jDatabase:
             await session.run(delete_crawl_query, crawl_id=crawl_id)
             return True
 
+    # ========== CRAWL METHODS ==========
     async def create_crawl(
         self,
         crawl_id: str,
@@ -453,6 +475,9 @@ class Neo4jDatabase:
                 )
             return results
 
+    # On commente le code suivant pour utiliser le cypher
+    # Car AuraDB n'accepte pas GDS
+    '''
     async def calculate_pagerank(self, crawl_id: str, force: bool = False):
         """
         Calculate PageRank for a crawl, ignoring structural links (nav/footer).
@@ -552,6 +577,103 @@ class Neo4jDatabase:
                 RETURN p.url AS url, p.title AS title, r.pagerank AS score
                 ORDER BY r.pagerank DESC
             """,
+                crawl_id=crawl_id,
+            )
+
+            scores = []
+            max_score = 0
+            async for record in result:
+                score = record["score"]
+                if score > max_score:
+                    max_score = score
+                scores.append(
+                    {
+                        "url": record["url"],
+                        "title": record["title"],
+                        "score": round(score, 4),
+                    }
+                )
+
+            return {"has_scores": True, "max_score": round(max_score, 4), "scores": scores}
+            '''
+
+    async def calculate_degree_centrality(self, crawl_id: str, force: bool = False):
+        """
+        Calcul du degree de centrality en utilisant que du pur cypher
+        Car AuraDB n'accepte pas GDS
+
+        Args:
+            crawl_id: The crawl ID
+            force: If False, return existing scores if available. If True, recalculate.
+
+        Returns:
+            dict with has_scores, max_score, and scores array
+        """
+        async with self.driver.session() as session:
+            # Check if scores already exist
+            if not force:
+                check_result = await session.run(
+                    """
+                    MATCH (c:Crawl {crawl_id: $crawl_id})-[r:CRAWLED]->(p:Page)
+                    WHERE r.degree_centrality IS NOT NULL
+                    RETURN count(r) AS score_count
+                    """,
+                    crawl_id=crawl_id,
+                )
+                check = await check_result.single()
+                if check and check["score_count"] > 0:
+                    # Scores exist, return them
+                    result = await session.run(
+                        """
+                        MATCH (c:Crawl {crawl_id: $crawl_id})-[r:CRAWLED]->(p:Page)
+                        WHERE r.degree_centrality IS NOT NULL
+                        RETURN p.url AS url, p.title AS title, r.degree_centrality AS score
+                        ORDER BY r.degree_centrality DESC
+                        """,
+                        crawl_id=crawl_id,
+                    )
+                    scores = []
+                    max_score = 0
+                    async for record in result:
+                        score = record["score"]
+                        if score > max_score:
+                            max_score = score
+                        scores.append(
+                            {
+                                "url": record["url"],
+                                "title": record["title"],
+                                "score": round(score, 4),
+                            }
+                        )
+                    return {"has_scores": True, "max_score": round(max_score, 4), "scores": scores}
+
+            # Calculate in-degree centrality using pure Cypher
+            # Count incoming links from other crawled pages (content links only)
+            await session.run(
+                """
+                MATCH (c:Crawl {crawl_id: $crawl_id})-[cr:CRAWLED]->(target:Page)
+                WHERE cr.status_code > 0 AND cr.status_code <> 301
+                // Count incoming content links from other crawled pages
+                OPTIONAL MATCH (c)-[cr2:CRAWLED]->(source:Page)-[link:LINKS_TO]->(target)
+                WHERE cr2.status_code > 0 AND cr2.status_code <> 301
+                  AND source <> target
+                  AND (link.link_type = 'content' OR link.link_type IS NULL)
+                WITH c, target, count(DISTINCT source) AS in_degree
+                // Update the CRAWLED relation with the degree centrality score
+                MATCH (c)-[r:CRAWLED]->(target)
+                SET r.degree_centrality = in_degree
+                """,
+                crawl_id=crawl_id,
+            )
+
+            # Return all results with max_score
+            result = await session.run(
+                """
+                MATCH (c:Crawl {crawl_id: $crawl_id})-[r:CRAWLED]->(p:Page)
+                WHERE r.degree_centrality IS NOT NULL
+                RETURN p.url AS url, p.title AS title, r.degree_centrality AS score
+                ORDER BY r.degree_centrality DESC
+                """,
                 crawl_id=crawl_id,
             )
 

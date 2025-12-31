@@ -250,7 +250,7 @@ async def get_pagerank(
         scores: Array of {url, title, score}
     """
     try:
-        results = await db.calculate_pagerank(crawl_id, force=force)
+        results = await db.calculate_degree_centrality(crawl_id, force=force)
         return results
     except Exception as e:
         logger.error(f"Error calculating PageRank: {e}")

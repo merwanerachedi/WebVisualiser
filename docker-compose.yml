@@ -42,14 +42,12 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - NEO4J_URI=bolt://neo4j:7687
-      - NEO4J_USER=neo4j
-      - NEO4J_PASSWORD=password123
+      - AURADB_URI=${AURADB_URI}
+      - AURADB_USER=${AURADB_USER}
+      - AURADB_PASSWORD=${AURADB_PASSWORD}
       - REDIS_URL=redis://redis:6379
       - GROQ_API_KEY=${GROQ_API_KEY}
     depends_on:
-      neo4j:
-        condition: service_healthy
       redis:
         condition: service_healthy
     volumes:
