@@ -27,7 +27,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
-        "https://webvisualiser.vercel.app",
+        "https://web-visualiser-two.vercel.app",
     ],
     allow_credentials=True,
     allow_methods=["*"],
