@@ -89,16 +89,16 @@ async def login(
         key="access_token",
         value=access_token,
         httponly=True,
-        secure=False,  # Set to True in production with HTTPS
-        samesite="lax",
-        max_age=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,  # Match refresh token duration
+        secure=True,  # Required for HTTPS (Render)
+        samesite="none",  # Required for cross-origin cookies
+        max_age=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
     )
     response.set_cookie(
         key="refresh_token",
-        value=f"{user['user_id']}:{refresh_token}",  # Store user_id with token
+        value=f"{user['user_id']}:{refresh_token}",
         httponly=True,
-        secure=False,
-        samesite="lax",
+        secure=True,
+        samesite="none",
         max_age=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
     )
 
@@ -149,9 +149,9 @@ async def refresh_token(response: Response, refresh_token: str | None = Cookie(d
         key="access_token",
         value=new_access_token,
         httponly=True,
-        secure=False,
-        samesite="lax",
-        max_age=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,  # Match refresh token duration
+        secure=True,
+        samesite="none",
+        max_age=REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
     )
 
     return {"message": "Token refreshed", "access_token": new_access_token}

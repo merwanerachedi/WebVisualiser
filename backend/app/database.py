@@ -422,7 +422,7 @@ class Neo4jDatabase:
     async def search_similar_pages(self, user_query: str, top_k: int = 5):
         """Cherche les pages les plus pertinentes par rapport à une question"""
         # 1. On transforme la question de l'utilisateur en vecteur
-        query_embedding = self.model.encode(user_query).tolist()
+        query_embedding = list(self.model.embed([user_query]))[0].tolist()
 
         async with self.driver.session() as session:
             # 2. On interroge l'index vectoriel de Neo4j
