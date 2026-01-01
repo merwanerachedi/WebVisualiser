@@ -134,7 +134,7 @@ Modern browsers block third-party cookies (Vercel ↔ Render).
 
 ### 1. Clone & Configure
 ```bash
-git clone [https://github.com/merwanerachedi/WebVisualiser.git](https://github.com/merwanerachedi/WebVisualiser.git)
+git clone https://github.com/merwanerachedi/WebVisualiser.git
 cd webvisualiser
 
 # Create .env files based on .env.example
