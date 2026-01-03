@@ -251,16 +251,22 @@ class Neo4jDatabase:
     # ✅ MODIFICATION : On ajoute un argument optionnel "text_content"
     async def create_or_update_page(self, url: str, page_data: dict, text_content: str = None):
         """Créer ou mettre à jour une page avec son vecteur"""
+        import time
 
         # 1. Calcul du vecteur si on a du texte
         embedding = None
+        embedding_time = 0
         if text_content:
             try:
+                t0 = time.perf_counter()
                 # .tolist() est important car Neo4j ne comprend pas les formats Numpy
                 embedding = list(self.model.embed([text_content]))[0].tolist()
+                embedding_time = time.perf_counter() - t0
+                logger.info(f"⏱️ Embedding: {embedding_time * 1000:.1f}ms for {url[:50]}...")
             except Exception as e:
                 logger.error(f"Erreur vectorisation pour {url}: {e}")
 
+        t0 = time.perf_counter()
         async with self.driver.session() as session:
             query = """
                 MERGE (p:Page {url: $url})
@@ -294,7 +300,10 @@ class Neo4jDatabase:
             }
 
             result = await session.run(query, **params)
-            return await result.single()
+            record = await result.single()
+        db_time = time.perf_counter() - t0
+        logger.info(f"⏱️ DB save: {db_time * 1000:.1f}ms for {url[:50]}...")
+        return record
 
     async def create_link(self, source_url: str, target_url: str, link_data: dict):
         # (Garde ton code précédent ici)
