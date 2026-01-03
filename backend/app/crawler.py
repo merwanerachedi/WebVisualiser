@@ -391,10 +391,22 @@ class WebCrawler:
             logger.error(f"❌ Error crawling {url}: {e}")
 
     async def _extract_links(self, soup: BeautifulSoup, current_url: str, current_depth: int):
+        import time
+
         current_domain = urlparse(current_url).netloc
         normalized_current = self._normalize_url(current_url)
 
-        for link_tag in soup.find_all("a", href=True):
+        # ⏱️ TIMING: Pure HTML parsing
+        t0 = time.perf_counter()
+        all_links = soup.find_all("a", href=True)
+        self.profiler.record("6a_parse_html", time.perf_counter() - t0)
+
+        # Collect all pages and links for batch insert
+        pages_to_create = []
+        links_to_create = []
+        ws_messages = []
+
+        for link_tag in all_links:
             href = link_tag["href"]
             anchor_text = link_tag.get_text(strip=True)
 
@@ -416,37 +428,60 @@ class WebCrawler:
             target_url = self.url_redirects.get(normalized_target, normalized_target)
             parsed_target = urlparse(target_url)
 
-            await self.db.create_or_update_page(
-                target_url,
+            # Collect page data for batch insert
+            pages_to_create.append(
                 {
+                    "url": target_url,
                     "domain": parsed_target.netloc,
                     "path": parsed_target.path,
                     "status_code": 0,
-                    "title": anchor_text or f"Link from {urlparse(current_url).path}",
-                },
-            )
-            # NOTE: On ne crée PAS la relation CRAWLED ici (découverte)
-            # Elle sera créée avec le bon status_code quand la page sera crawlée
-
-            await self.db.create_link(
-                source_url=current_url,
-                target_url=target_url,
-                link_data={"anchor_text": anchor_text[:200], "crawl_id": self.crawl_id, "link_type": link_type},
-            )
-            self.links_found += 1
-
-            self.pending_links.append((current_url, target_url))
-
-            # ✅ Broadcast ALL links - Frontend will filter to show only crawled→crawled
-            await self._broadcast_throttled(
-                {
-                    "type": "link_created",
-                    "data": {"source": normalized_current, "target": target_url, "anchor": anchor_text[:50]},
+                    "title": anchor_text[:200] if anchor_text else f"Link from {urlparse(current_url).path}",
                 }
             )
 
+            # Collect link data for batch insert
+            links_to_create.append(
+                {
+                    "source": current_url,
+                    "target": target_url,
+                    "anchor_text": anchor_text[:200] if anchor_text else "",
+                    "link_type": link_type,
+                }
+            )
+
+            # Collect WebSocket messages
+            ws_messages.append(
+                {
+                    "type": "link_created",
+                    "data": {
+                        "source": normalized_current,
+                        "target": target_url,
+                        "anchor": anchor_text[:50] if anchor_text else "",
+                    },
+                }
+            )
+
+            self.links_found += 1
+            self.pending_links.append((current_url, target_url))
+
             if target_url not in self.visited_urls:
                 self._add_to_queue(target_url, current_depth + 1)
+
+        # ⏱️ TIMING: Batch DB create pages
+        t0 = time.perf_counter()
+        await self.db.batch_create_pages(pages_to_create)
+        self.profiler.record("6b_db_batch_pages", time.perf_counter() - t0)
+
+        # ⏱️ TIMING: Batch DB create links
+        t0 = time.perf_counter()
+        await self.db.batch_create_links(links_to_create)
+        self.profiler.record("6c_db_batch_links", time.perf_counter() - t0)
+
+        # ⏱️ TIMING: WebSocket broadcasts (still sequential for real-time UX)
+        t0 = time.perf_counter()
+        for msg in ws_messages:
+            await self._broadcast_throttled(msg)
+        self.profiler.record("6d_ws_broadcast_links", time.perf_counter() - t0)
 
     async def _update_redirect_links(self):
         if not self.url_redirects:

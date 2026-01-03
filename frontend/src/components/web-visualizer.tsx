@@ -122,6 +122,19 @@ export default function WebVisualizer() {
         setNodes(loadedNodes)
         setLinks(loadedLinks)
         setCrawlCompleted(true)
+        setCurrentCrawlId(crawlId) // Store for analytics
+
+        try {
+          const statusResponse = await fetch(`${API_URL}/api/crawl/${crawlId}/embedding-status`, {
+            credentials: "include",
+          })
+          if (statusResponse.ok) {
+            const statusData = await statusResponse.json()
+            setEmbeddingsReady(statusData.embedding_status === "completed")
+          }
+        } catch (err) {
+          setEmbeddingsReady(true)
+        }
 
         // Zoomer sur le graphe après chargement
         setTimeout(() => {

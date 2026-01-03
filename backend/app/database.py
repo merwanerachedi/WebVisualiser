@@ -311,6 +311,53 @@ class Neo4jDatabase:
             """
             await session.run(query, source_url=source_url, target_url=target_url, **link_data)
 
+    # ========== BATCH METHODS FOR PERFORMANCE ==========
+
+    async def batch_create_pages(self, pages: list[dict]):
+        """
+        Crée ou met à jour plusieurs pages en une seule requête.
+        pages = [{"url": "...", "domain": "...", "path": "...", "status_code": 0, "title": "..."}, ...]
+        """
+        if not pages:
+            return
+
+        async with self.driver.session() as session:
+            query = """
+                UNWIND $pages as page
+                MERGE (p:Page {url: page.url})
+                ON CREATE SET
+                    p.domain = page.domain,
+                    p.path = page.path,
+                    p.title = page.title,
+                    p.status_code = page.status_code,
+                    p.created_at = datetime(),
+                    p.crawl_count = 1
+                ON MATCH SET
+                    p.title = CASE WHEN page.title IS NOT NULL AND p.title IS NULL THEN page.title ELSE p.title END
+            """
+            await session.run(query, pages=pages)
+
+    async def batch_create_links(self, links: list[dict]):
+        """
+        Crée plusieurs liens en une seule requête.
+        links = [{"source": "...", "target": "...", "anchor_text": "...", "link_type": "..."}, ...]
+        """
+        if not links:
+            return
+
+        async with self.driver.session() as session:
+            query = """
+                UNWIND $links as link
+                MATCH (source:Page {url: link.source})
+                MATCH (target:Page {url: link.target})
+                MERGE (source)-[r:LINKS_TO]->(target)
+                ON CREATE SET
+                    r.anchor_text = link.anchor_text,
+                    r.discovered_at = datetime(),
+                    r.link_type = link.link_type
+            """
+            await session.run(query, links=links)
+
     async def link_crawl_to_page(self, crawl_id: str, page_url: str, status_code: int = 0):
         """
         Crée la relation [:CRAWLED] entre un Crawl et une Page.
