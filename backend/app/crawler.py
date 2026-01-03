@@ -260,6 +260,10 @@ class WebCrawler:
 
         logger.info(f"Crawl {self.crawl_id} completed. Pages: {self.pages_crawled}, Links: {self.links_found}")
 
+        # ✅ LANCEMENT DES EMBEDDINGS EN BACKGROUND (non-bloquant)
+        logger.info(f"🧠 Launching background embedding generation for crawl {self.crawl_id}")
+        asyncio.create_task(self.db.generate_embeddings_for_crawl(self.crawl_id))
+
     def _add_to_queue(self, url: str, depth: int):
         if self.algorithm == "BFS":
             self.to_visit.append((url, depth))

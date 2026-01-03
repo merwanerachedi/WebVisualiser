@@ -221,7 +221,8 @@ class Neo4jDatabase:
                     pages_crawled: 0,
                     links_found: 0,
                     crawl_mode: $crawl_mode,
-                    algorithm: $algorithm
+                    algorithm: $algorithm,
+                    embedding_status: 'pending'
                 })
                 RETURN c
             """
@@ -248,23 +249,10 @@ class Neo4jDatabase:
 
             return crawl
 
-    # ✅ MODIFICATION : On ajoute un argument optionnel "text_content"
+    # ✅ OPTIMISATION: Pas d'embedding pendant le crawl, on sauvegarde le text_content
     async def create_or_update_page(self, url: str, page_data: dict, text_content: str = None):
-        """Créer ou mettre à jour une page avec son vecteur"""
+        """Créer ou mettre à jour une page - sauvegarde le text_content pour embedding ultérieur"""
         import time
-
-        # 1. Calcul du vecteur si on a du texte
-        embedding = None
-        embedding_time = 0
-        if text_content:
-            try:
-                t0 = time.perf_counter()
-                # .tolist() est important car Neo4j ne comprend pas les formats Numpy
-                embedding = list(self.model.embed([text_content]))[0].tolist()
-                embedding_time = time.perf_counter() - t0
-                logger.info(f"⏱️ Embedding: {embedding_time * 1000:.1f}ms for {url[:50]}...")
-            except Exception as e:
-                logger.error(f"Erreur vectorisation pour {url}: {e}")
 
         t0 = time.perf_counter()
         async with self.driver.session() as session:
@@ -276,14 +264,14 @@ class Neo4jDatabase:
                     p.title = $title,
                     p.status_code = $status_code,
                     p.content_type = $content_type,
-                    p.embedding = $embedding,  // 👈 On stocke le vecteur
+                    p.text_content = $text_content,
                     p.created_at = datetime(),
                     p.last_crawled_at = datetime(),
                     p.crawl_count = 1
                 ON MATCH SET
                     p.title = CASE WHEN $title IS NOT NULL THEN $title ELSE p.title END,
                     p.status_code = CASE WHEN $status_code IS NOT NULL THEN $status_code ELSE p.status_code END,
-                    p.embedding = CASE WHEN $embedding IS NOT NULL THEN $embedding ELSE p.embedding END, // 👈 Mise à jour vecteur
+                    p.text_content = CASE WHEN $text_content IS NOT NULL THEN $text_content ELSE p.text_content END,
                     p.last_crawled_at = datetime(),
                     p.crawl_count = p.crawl_count + 1
                 RETURN p
@@ -296,13 +284,13 @@ class Neo4jDatabase:
                 "title": page_data.get("title"),
                 "status_code": page_data.get("status_code"),
                 "content_type": page_data.get("content_type"),
-                "embedding": embedding,  # Peut être None, c'est pas grave
+                "text_content": text_content,
             }
 
             result = await session.run(query, **params)
             record = await result.single()
         db_time = time.perf_counter() - t0
-        logger.info(f"⏱️ DB save: {db_time * 1000:.1f}ms for {url[:50]}...")
+        logger.debug(f"⏱️ DB save: {db_time * 1000:.1f}ms for {url[:50]}...")
         return record
 
     async def create_link(self, source_url: str, target_url: str, link_data: dict):
@@ -377,6 +365,77 @@ class Neo4jDatabase:
                 pd=record["discovered"],
                 lf=links_found,
             )
+
+    # ========== EMBEDDING METHODS ==========
+
+    async def get_embedding_status(self, crawl_id: str) -> str:
+        """Retourne le status d'embedding d'un crawl: 'pending', 'processing', 'completed'"""
+        async with self.driver.session() as session:
+            result = await session.run(
+                "MATCH (c:Crawl {crawl_id: $crawl_id}) RETURN c.embedding_status as status",
+                crawl_id=crawl_id,
+            )
+            record = await result.single()
+            return record["status"] if record else "pending"
+
+    async def update_embedding_status(self, crawl_id: str, status: str):
+        """Met à jour le status d'embedding d'un crawl"""
+        async with self.driver.session() as session:
+            await session.run(
+                "MATCH (c:Crawl {crawl_id: $crawl_id}) SET c.embedding_status = $status",
+                crawl_id=crawl_id,
+                status=status,
+            )
+
+    async def generate_embeddings_for_crawl(self, crawl_id: str):
+        """
+        Génère les embeddings pour toutes les pages d'un crawl qui n'en ont pas encore.
+        Cette méthode est conçue pour être appelée en background après le crawl.
+        """
+        import time
+
+        logger.info(f"🧠 Starting background embedding generation for crawl {crawl_id}")
+        await self.update_embedding_status(crawl_id, "processing")
+
+        try:
+            async with self.driver.session() as session:
+                # Récupérer les pages du crawl qui ont du text_content mais pas d'embedding
+                query = """
+                    MATCH (c:Crawl {crawl_id: $crawl_id})-[:CRAWLED]->(p:Page)
+                    WHERE p.text_content IS NOT NULL AND p.embedding IS NULL
+                    RETURN p.url as url, p.text_content as text_content
+                """
+                result = await session.run(query, crawl_id=crawl_id)
+                pages = [{"url": r["url"], "text_content": r["text_content"]} async for r in result]
+
+            logger.info(f"🧠 Found {len(pages)} pages to embed for crawl {crawl_id}")
+
+            # Générer les embeddings un par un
+            for i, page in enumerate(pages):
+                try:
+                    t0 = time.perf_counter()
+                    embedding = list(self.model.embed([page["text_content"]]))[0].tolist()
+                    embed_time = time.perf_counter() - t0
+
+                    # Sauvegarder l'embedding
+                    async with self.driver.session() as session:
+                        await session.run(
+                            "MATCH (p:Page {url: $url}) SET p.embedding = $embedding",
+                            url=page["url"],
+                            embedding=embedding,
+                        )
+
+                    logger.info(f"🧠 [{i + 1}/{len(pages)}] Embedded {page['url'][:50]}... ({embed_time * 1000:.0f}ms)")
+
+                except Exception as e:
+                    logger.error(f"❌ Error embedding {page['url']}: {e}")
+
+            await self.update_embedding_status(crawl_id, "completed")
+            logger.info(f"✅ Background embedding completed for crawl {crawl_id}")
+
+        except Exception as e:
+            logger.error(f"❌ Background embedding failed for crawl {crawl_id}: {e}")
+            await self.update_embedding_status(crawl_id, "failed")
 
     async def get_crawl_graph(self, crawl_id: str):
         """

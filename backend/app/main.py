@@ -296,17 +296,39 @@ async def summarize_page(
 # ========== SIMILAR PAGES ENDPOINT ==========
 
 
+@app.get("/api/crawl/{crawl_id}/embedding-status")
+async def get_embedding_status(crawl_id: str):
+    """Get the embedding generation status for a crawl."""
+    try:
+        status = await db.get_embedding_status(crawl_id)
+        return {"crawl_id": crawl_id, "embedding_status": status}
+    except Exception as e:
+        logger.error(f"Error getting embedding status: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
 @app.get("/api/page/similar")
 async def find_similar_pages(
     request: Request,
     url: str,
+    crawl_id: str = None,
     limit: int = 10,
     _: None = Depends(RateLimiter(limit=10, window=60, key_prefix="similar")),
 ):
     """Find pages with similar content to the given URL using embeddings."""
     try:
+        # Vérifier si les embeddings sont prêts (si crawl_id fourni)
+        if crawl_id:
+            status = await db.get_embedding_status(crawl_id)
+            if status != "completed":
+                return {
+                    "error": "embeddings_not_ready",
+                    "status": status,
+                    "message": "Les embeddings sont en cours de génération. Réessayez dans quelques instants.",
+                }
+
         similar_pages = await db.find_similar_pages_by_url(url, top_k=limit)
-        return similar_pages
+        return {"pages": similar_pages, "status": "completed"}
     except Exception as e:
         logger.error(f"Error finding similar pages: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from e
