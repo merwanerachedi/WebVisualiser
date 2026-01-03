@@ -58,6 +58,7 @@ export default function WebVisualizer() {
   const [isSearching, setIsSearching] = useState(false)
   const [crawlCompleted, setCrawlCompleted] = useState(false)
   const [isStopping, setIsStopping] = useState(false)
+  const [embeddingsReady, setEmbeddingsReady] = useState(false)
 
   // Analytics Mode States
   const [analyticsMode, setAnalyticsMode] = useState(false)
@@ -268,6 +269,7 @@ export default function WebVisualizer() {
     const cleanSeedUrl = normalizeUrl(url)
 
     setCrawlCompleted(false)
+    setEmbeddingsReady(false) // Reset embeddings status
     setSearchScores({})
     setRateLimitError(null)
 
@@ -407,13 +409,18 @@ export default function WebVisualizer() {
             })
           } else if (message.type === "crawl_completed") {
             setIsCrawling(false)
-            setIsConnected(false)
             setCrawlCompleted(true)
             setIsStopping(false)
+            // Ne PAS fermer le WebSocket - on attend embedding_completed
+            if (fgRef.current) fgRef.current.zoomToFit(1000, 50)
+          } else if (message.type === "embedding_completed") {
+            // Embeddings terminés - on peut maintenant utiliser search/similar
+            setEmbeddingsReady(true)
+            setIsConnected(false)
             if (pingInterval) clearInterval(pingInterval)
             ws.close()
             wsRef.current = null
-            if (fgRef.current) fgRef.current.zoomToFit(1000, 50)
+            console.log("✅ Embeddings completed, WebSocket closed")
           } else if (message.type === "redirect_corrected") {
             const { source, old_target, new_target } = message.data
             const s = normalizeUrl(source),
@@ -490,6 +497,7 @@ export default function WebVisualizer() {
     setUrl("")
     setSearchQuery("")
     setCrawlCompleted(false)
+    setEmbeddingsReady(false)
     setClickedNode(null)
     setSelectedNode(null)
   }, [handleStopCrawl])
@@ -584,6 +592,7 @@ export default function WebVisualizer() {
             nodeUrl={selectedNode.url}
             nodeTitle={selectedNode.title}
             crawlId={currentCrawlId || crawlIdFromUrl}
+            embeddingsReady={embeddingsReady}
             onClose={() => {
               setClickedNode(null)
               setSelectedNode(null)
@@ -734,7 +743,7 @@ export default function WebVisualizer() {
         </DraggableWindow>
       )}
 
-      {crawlCompleted && (
+      {embeddingsReady && (
         <DraggableWindow title="Search" defaultPosition={{ x: 50, y: 440 }} width={500}>
           <SearchPanel
             searchQuery={searchQuery}

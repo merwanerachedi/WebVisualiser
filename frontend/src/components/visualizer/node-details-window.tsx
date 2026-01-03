@@ -20,6 +20,7 @@ interface NodeDetailsWindowProps {
     nodeUrl: string
     nodeTitle?: string
     crawlId?: string | null // Added for outlinks API
+    embeddingsReady?: boolean // true when embeddings generation is complete
     onClose: () => void
     onSimilarPagesFound?: (pages: SimilarPage[]) => void
     onHoverSimilarPage?: (url: string | null) => void
@@ -31,6 +32,7 @@ export function NodeDetailsWindow({
     nodeUrl,
     nodeTitle,
     crawlId,
+    embeddingsReady = true, // Default true for history views
     onClose,
     onSimilarPagesFound,
     onHoverSimilarPage,
@@ -231,13 +233,21 @@ export function NodeDetailsWindow({
             {/* Similar Pages button */}
             <Button
                 onClick={handleFindSimilar}
-                disabled={isFindingSimilar}
-                className="w-full bg-gradient-to-r from-cyan-600/90 to-teal-600/90 hover:from-cyan-500 hover:to-teal-500 text-white font-medium transition-all"
+                disabled={isFindingSimilar || !embeddingsReady}
+                className={`w-full font-medium transition-all ${!embeddingsReady
+                        ? "bg-slate-600/50 text-slate-400 cursor-not-allowed"
+                        : "bg-gradient-to-r from-cyan-600/90 to-teal-600/90 hover:from-cyan-500 hover:to-teal-500 text-white"
+                    }`}
             >
                 {isFindingSimilar ? (
                     <>
                         <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                         Finding similar...
+                    </>
+                ) : !embeddingsReady ? (
+                    <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Generating embeddings...
                     </>
                 ) : (
                     <>
@@ -253,8 +263,8 @@ export function NodeDetailsWindow({
                     onClick={handleViewOutlinks}
                     disabled={isLoadingOutlinks}
                     className={`w-full font-medium transition-all ${showOutlinks
-                            ? "bg-indigo-500/20 border border-indigo-500/50 text-indigo-300 hover:bg-indigo-500/30"
-                            : "bg-gradient-to-r from-indigo-600/90 to-purple-600/90 hover:from-indigo-500 hover:to-purple-500 text-white"
+                        ? "bg-indigo-500/20 border border-indigo-500/50 text-indigo-300 hover:bg-indigo-500/30"
+                        : "bg-gradient-to-r from-indigo-600/90 to-purple-600/90 hover:from-indigo-500 hover:to-purple-500 text-white"
                         }`}
                 >
                     {isLoadingOutlinks ? (

@@ -387,10 +387,14 @@ class Neo4jDatabase:
                 status=status,
             )
 
-    async def generate_embeddings_for_crawl(self, crawl_id: str):
+    async def generate_embeddings_for_crawl(self, crawl_id: str, on_complete=None):
         """
         Génère les embeddings pour toutes les pages d'un crawl qui n'en ont pas encore.
         Cette méthode est conçue pour être appelée en background après le crawl.
+
+        Args:
+            crawl_id: ID du crawl
+            on_complete: Callback async appelé quand les embeddings sont terminés
         """
         import time
 
@@ -432,6 +436,10 @@ class Neo4jDatabase:
 
             await self.update_embedding_status(crawl_id, "completed")
             logger.info(f"✅ Background embedding completed for crawl {crawl_id}")
+
+            # Notifier via callback (WebSocket)
+            if on_complete:
+                await on_complete()
 
         except Exception as e:
             logger.error(f"❌ Background embedding failed for crawl {crawl_id}: {e}")

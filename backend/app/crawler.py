@@ -262,7 +262,16 @@ class WebCrawler:
 
         # ✅ LANCEMENT DES EMBEDDINGS EN BACKGROUND (non-bloquant)
         logger.info(f"🧠 Launching background embedding generation for crawl {self.crawl_id}")
-        asyncio.create_task(self.db.generate_embeddings_for_crawl(self.crawl_id))
+
+        async def on_embeddings_complete():
+            """Callback appelé quand les embeddings sont terminés - notifie le frontend via WebSocket"""
+            await self.manager.broadcast(
+                self.crawl_id,
+                {"type": "embedding_completed", "data": {"crawl_id": self.crawl_id}},
+            )
+            logger.info(f"📡 Sent embedding_completed notification for crawl {self.crawl_id}")
+
+        asyncio.create_task(self.db.generate_embeddings_for_crawl(self.crawl_id, on_complete=on_embeddings_complete))
 
     def _add_to_queue(self, url: str, depth: int):
         if self.algorithm == "BFS":

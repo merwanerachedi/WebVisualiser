@@ -328,7 +328,7 @@ async def find_similar_pages(
                 }
 
         similar_pages = await db.find_similar_pages_by_url(url, top_k=limit)
-        return {"pages": similar_pages, "status": "completed"}
+        return similar_pages
     except Exception as e:
         logger.error(f"Error finding similar pages: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from e

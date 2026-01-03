@@ -13,7 +13,7 @@ export interface Link {
 }
 
 export interface WebSocketMessage {
-  type: "link_created" | "page_discovered" | "crawl_completed" | "redirect_corrected"
+  type: "link_created" | "page_discovered" | "crawl_completed" | "redirect_corrected" | "embedding_completed"
   data: {
     source?: string
     target?: string
