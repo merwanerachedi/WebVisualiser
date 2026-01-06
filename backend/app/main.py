@@ -253,7 +253,22 @@ async def get_pagerank(
         scores: Array of {url, title, score}
     """
     try:
+        # 1. Si force=True, invalider le cache
+        if force:
+            await cache.invalidate_degree_centrality(crawl_id)
+        else:
+            # 2. Vérifier le cache Redis
+            cached_result = await cache.get_degree_centrality(crawl_id)
+            if cached_result:
+                return cached_result
+
+        # 3. Calculer depuis Neo4j
         results = await db.calculate_degree_centrality(crawl_id, force=force)
+
+        # 4. Mettre en cache si des scores existent
+        if results.get("has_scores"):
+            await cache.set_degree_centrality(crawl_id, results)
+
         return results
     except Exception as e:
         logger.error(f"Error calculating PageRank: {e}")

@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 
@@ -102,6 +103,49 @@ class RedisCache:
             logger.info(f"Deleted refresh token for user {user_id}")
         except Exception as e:
             logger.error(f"Redis delete refresh token error: {e}")
+
+    # --------Degree Centrality Cache---------
+
+    # TTL for degree centrality scores (1 day - crawl data is stable after completion)
+    DEGREE_CENTRALITY_TTL = 60 * 60 * 24
+
+    async def get_degree_centrality(self, crawl_id: str) -> dict | None:
+        """Get cached degree centrality scores for a crawl."""
+        if not self.client:
+            return None
+        try:
+            key = f"degree_centrality:{crawl_id}"
+            data = await self.client.get(key)
+            if data:
+                logger.info(f"✅ Cache HIT for degree centrality {crawl_id}")
+                return json.loads(data)
+            logger.info(f"❌ Cache MISS for degree centrality {crawl_id}")
+            return None
+        except Exception as e:
+            logger.error(f"Redis get degree centrality error: {e}")
+            return None
+
+    async def set_degree_centrality(self, crawl_id: str, data: dict):
+        """Cache degree centrality scores with TTL."""
+        if not self.client:
+            return
+        try:
+            key = f"degree_centrality:{crawl_id}"
+            await self.client.setex(key, self.DEGREE_CENTRALITY_TTL, json.dumps(data))
+            logger.info(f"Cached degree centrality for {crawl_id} (TTL: {self.DEGREE_CENTRALITY_TTL}s)")
+        except Exception as e:
+            logger.error(f"Redis set degree centrality error: {e}")
+
+    async def invalidate_degree_centrality(self, crawl_id: str):
+        """Invalidate cached degree centrality (used when force=True)."""
+        if not self.client:
+            return
+        try:
+            key = f"degree_centrality:{crawl_id}"
+            await self.client.delete(key)
+            logger.info(f"Invalidated degree centrality cache for {crawl_id}")
+        except Exception as e:
+            logger.error(f"Redis invalidate degree centrality error: {e}")
 
 
 # Singleton
