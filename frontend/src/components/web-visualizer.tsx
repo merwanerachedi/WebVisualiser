@@ -522,10 +522,19 @@ export default function WebVisualizer() {
     }
   }, [])
 
+  // Calculate total discovered nodes from all links
+  const allDiscoveredUrls = new Set<string>()
+  allLinksRef.current.bySource.forEach((_, source) => allDiscoveredUrls.add(source))
+  allLinksRef.current.byTarget.forEach((_, target) => allDiscoveredUrls.add(target))
+
+  // Count total links from indexed storage
+  let totalLinks = 0
+  allLinksRef.current.bySource.forEach((links) => totalLinks += links.length)
+
   const stats = {
-    discovered: nodes.length,
+    discovered: Math.max(allDiscoveredUrls.size, nodes.length), // Use max to handle both live crawl and history load
     crawled: nodes.filter((n) => n.status === "crawled").length,
-    links: links.length,
+    links: Math.max(totalLinks, links.length), // Use max to handle both live crawl and history load
   }
 
   const getSliderThumbColor = (value: number) => {
