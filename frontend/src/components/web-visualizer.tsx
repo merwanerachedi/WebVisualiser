@@ -4,6 +4,7 @@ import type React from "react"
 
 import { useState, useEffect, useRef, useCallback } from "react"
 import { useSearchParams } from "next/navigation"
+import { optionalAuthApi } from "@/lib/api"
 import { Starfield } from "./visualizer/starfield"
 import { CrawlControls } from "./visualizer/crawl-controls"
 import { SearchPanel } from "./visualizer/search-panel"
@@ -287,22 +288,10 @@ export default function WebVisualizer() {
     setRateLimitError(null)
 
     try {
-      const resp = await fetch(`${API_URL}/api/crawl`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ url, ...config }),
-      })
-
-      // Handle rate limit
-      if (resp.status === 429) {
-        setRateLimitError("Too many crawls! Please wait a moment before exploring again ✨")
-        setTimeout(() => setRateLimitError(null), 5000) // Auto-dismiss after 5s
-        return
-      }
-
-      if (!resp.ok) throw new Error(`Failed: ${resp.status}`)
-      const data = await resp.json()
+      // Utiliser optionalAuthApi pour tenter un refresh silencieux du token
+      // Si l'utilisateur était connecté, le crawl sera linké à son compte
+      const resp = await optionalAuthApi.post("/api/crawl", { url, ...config })
+      const data = resp.data
       const crawlId = data.crawl_id
       setCurrentCrawlId(crawlId) // Store for analytics
 
@@ -484,7 +473,13 @@ export default function WebVisualizer() {
         setIsCrawling(false)
       }
       wsRef.current = ws
-    } catch (_err) {
+    } catch (err) {
+      // Handle rate limit from axios error
+      const axiosError = err as { response?: { status?: number } }
+      if (axiosError.response?.status === 429) {
+        setRateLimitError("Too many crawls! Please wait a moment before exploring again ✨")
+        setTimeout(() => setRateLimitError(null), 5000)
+      }
       setIsCrawling(false)
       setIsConnected(false)
     }

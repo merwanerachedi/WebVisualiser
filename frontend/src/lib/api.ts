@@ -64,4 +64,53 @@ api.interceptors.response.use(
     }
 )
 
+// ====================
+// OPTIONAL AUTH API CLIENT
+// ====================
+// Pour les endpoints avec auth optionnelle (crawl, etc.)
+// Tente de refresh le token AVANT chaque requête pour garantir que l'utilisateur
+// reste authentifié même si son access token a expiré
+export const optionalAuthApi = axios.create({
+    baseURL: API_URL,
+    withCredentials: true,
+    headers: {
+        "Content-Type": "application/json",
+    },
+})
+
+// Variable pour éviter les refresh multiples en parallèle
+let isRefreshing = false
+let refreshPromise: Promise<void> | null = null
+
+// Request interceptor - refresh proactif AVANT chaque requête
+optionalAuthApi.interceptors.request.use(
+    async (config) => {
+        // Éviter les refresh en parallèle
+        if (isRefreshing && refreshPromise) {
+            await refreshPromise
+            return config
+        }
+
+        // Tenter un refresh silencieux avant la requête
+        isRefreshing = true
+        refreshPromise = publicApi
+            .post("/api/auth/refresh")
+            .then(() => {
+                console.log("[OptionalAuthAPI] Token refreshed successfully")
+            })
+            .catch(() => {
+                // Pas de problème, on continue en anonyme
+                console.log("[OptionalAuthAPI] No valid session, continuing as anonymous")
+            })
+            .finally(() => {
+                isRefreshing = false
+                refreshPromise = null
+            })
+
+        await refreshPromise
+        return config
+    },
+    (error) => Promise.reject(error)
+)
+
 export default api
