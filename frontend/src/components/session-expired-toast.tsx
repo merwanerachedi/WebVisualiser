@@ -3,9 +3,11 @@
 import { useState, useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { sessionExpiredConfirm } from "@/lib/session-events"
+import { useAuth } from "@/lib/auth-context"
 
 export function SessionExpiredModal() {
     const router = useRouter()
+    const { checkAuth } = useAuth()
     const [show, setShow] = useState(false)
     const [resolvePromise, setResolvePromise] = useState<((value: boolean) => void) | null>(null)
 
@@ -34,11 +36,13 @@ export function SessionExpiredModal() {
                 new Promise<boolean>((resolve) => {
                     setResolvePromise(() => resolve)
                     setShow(true)
+                    // Update navbar immediately when session expires
+                    checkAuth()
                 }),
         )
 
         return unsubscribe
-    }, [])
+    }, [checkAuth])
 
     if (!show) return null
 

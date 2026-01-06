@@ -67,8 +67,8 @@ class RedisCache:
 
     # --------Refresh Token Storage---------
 
-    # TTL for refresh tokens (1 hour)
-    REFRESH_TOKEN_TTL = 60 * 2
+    # TTL for refresh tokens (1 day)
+    REFRESH_TOKEN_TTL = 60 * 60 * 24
 
     async def store_refresh_token(self, user_id: str, token: str):
         """Store a refresh token for a user with TTL."""
