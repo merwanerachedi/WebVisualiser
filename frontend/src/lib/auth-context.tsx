@@ -45,6 +45,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try {
             await publicApi.post("/api/auth/login", { email, password })
             await checkAuth()
+            // Set flag for session expiry detection
+            localStorage.setItem("wasLoggedIn", "true")
             return { success: true }
         } catch (error) {
             const errorMessage =
@@ -71,6 +73,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } catch {
             // Ignore errors
         }
+        // Clear session flag
+        localStorage.removeItem("wasLoggedIn")
         setUser(null)
     }
 

@@ -4,6 +4,7 @@ import { Analytics } from "@vercel/analytics/next"
 import "./globals.css"
 import { AuthProvider } from "@/lib/auth-context"
 import { Navbar } from "@/components/navbar"
+import { SessionExpiredModal } from "@/components/session-expired-toast"
 
 import {
   Geist as V0_Font_Geist,
@@ -57,6 +58,7 @@ export default function RootLayout({
     <html lang="fr" className="dark">
       <body className="font-sans antialiased">
         <AuthProvider>
+          <SessionExpiredModal />
           <Navbar />
           <main>{children}</main>
         </AuthProvider>
@@ -65,3 +67,4 @@ export default function RootLayout({
     </html>
   )
 }
+
