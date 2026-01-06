@@ -33,6 +33,7 @@ export function NodeDetailsWindow({
     nodeTitle,
     crawlId,
     embeddingsReady = true, // Default true for history views
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onClose,
     onSimilarPagesFound,
     onHoverSimilarPage,
@@ -235,8 +236,8 @@ export function NodeDetailsWindow({
                 onClick={handleFindSimilar}
                 disabled={isFindingSimilar || !embeddingsReady}
                 className={`w-full font-medium transition-all ${!embeddingsReady
-                        ? "bg-slate-600/50 text-slate-400 cursor-not-allowed"
-                        : "bg-gradient-to-r from-cyan-600/90 to-teal-600/90 hover:from-cyan-500 hover:to-teal-500 text-white"
+                    ? "bg-slate-600/50 text-slate-400 cursor-not-allowed"
+                    : "bg-gradient-to-r from-cyan-600/90 to-teal-600/90 hover:from-cyan-500 hover:to-teal-500 text-white"
                     }`}
             >
                 {isFindingSimilar ? (
@@ -344,7 +345,7 @@ export function NodeDetailsWindow({
                         {similarPages.length} similar page{similarPages.length > 1 ? "s" : ""} found
                     </p>
                     <div className="space-y-2">
-                        {similarPages.map((page, index) => (
+                        {similarPages.map((page) => (
                             <div
                                 key={page.url}
                                 className="flex items-start gap-2 text-xs p-2 rounded bg-cyan-500/10 hover:bg-cyan-500/20 transition-colors cursor-pointer"

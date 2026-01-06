@@ -136,7 +136,7 @@ export function GraphCanvas({
           const isSearchActive = Object.keys(searchScores).length > 0
           const isSimilarModeActive = similarNodes.size > 0
           const isSimilarNode = similarNodes.has(node.id)
-          const isHoveredSimilarNode = hoveredSimilarUrl && node.id === hoveredSimilarUrl
+
 
           // Analytics mode: check if node passes importance threshold
           // Use node.url (not node.id) since API returns URLs
@@ -259,7 +259,7 @@ export function GraphCanvas({
               ctx.fillStyle = "rgba(255, 255, 255, 1)"
               ctx.fillText(label, node.x, node.y + glowSize + 2)
             }
-          } catch (_e) { }
+          } catch { }
 
           ctx.restore()
         }}

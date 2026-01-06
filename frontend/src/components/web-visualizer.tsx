@@ -30,7 +30,7 @@ export default function WebVisualizer() {
   const [url, setUrl] = useState("")
   const [isConnected, setIsConnected] = useState(false)
   const [isCrawling, setIsCrawling] = useState(false)
-  const [isLoadingHistory, setIsLoadingHistory] = useState(false)
+  const [, setIsLoadingHistory] = useState(false)
   const [rateLimitError, setRateLimitError] = useState<string | null>(null)
 
   const [nodes, setNodes] = useState<Node[]>([])
@@ -133,7 +133,7 @@ export default function WebVisualizer() {
             const statusData = await statusResponse.json()
             setEmbeddingsReady(statusData.embedding_status === "completed")
           }
-        } catch (err) {
+        } catch {
           setEmbeddingsReady(true)
         }
 
@@ -194,7 +194,7 @@ export default function WebVisualizer() {
     [selectedNode],
   )
 
-  const handleNodeClick = useCallback((node: Node, screenX: number, screenY: number) => {
+  const handleNodeClick = useCallback((node: Node, _screenX: number, _screenY: number) => {
     setClickedNode(node)
     setSelectedNode(node)
     setSimilarNodes(new Set()) // Clear similar nodes when clicking a new node

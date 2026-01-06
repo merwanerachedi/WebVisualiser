@@ -96,7 +96,7 @@ export function SessionExpiredModal() {
                         {/* Description with enhanced styling */}
                         <p className="text-white/60 text-center text-[15px] mb-8 leading-relaxed">
                             Your session has expired. If you continue without logging back in,{" "}
-                            <span className="text-cyan-400 font-semibold">this crawl won't be saved</span> to your history.
+                            <span className="text-cyan-400 font-semibold">this crawl won&apos;t be saved</span> to your history.
                         </p>
 
                         {/* Buttons with enhanced design */}
