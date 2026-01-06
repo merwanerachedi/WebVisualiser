@@ -625,6 +625,7 @@ export default function WebVisualizer() {
           isCrawling={isCrawling}
           isConnected={isConnected}
           isStopping={isStopping}
+          isAnalyzing={crawlCompleted && !embeddingsReady}
           onStartCrawl={handleStartCrawl}
           onStopCrawl={handleStopCrawl}
           onReset={handleReset}

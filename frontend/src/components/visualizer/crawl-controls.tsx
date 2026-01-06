@@ -8,6 +8,7 @@ interface CrawlControlsProps {
   isCrawling: boolean
   isConnected: boolean
   isStopping: boolean
+  isAnalyzing: boolean
   onStartCrawl: () => void
   onStopCrawl: () => void
   onReset: () => void
@@ -21,6 +22,7 @@ export function CrawlControls({
   isCrawling,
   isConnected,
   isStopping,
+  isAnalyzing,
   onStartCrawl,
   onStopCrawl,
   onReset,
@@ -29,6 +31,18 @@ export function CrawlControls({
 }: CrawlControlsProps) {
   // Déterminer quel bouton afficher
   const renderActionButton = () => {
+    // État: Analyzing (embeddings en cours)
+    if (isAnalyzing) {
+      return (
+        <button
+          disabled
+          className="flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 font-medium text-white cursor-not-allowed opacity-80"
+        >
+          <Loader2 className="h-4 w-4 animate-spin" /> Analyzing...
+        </button>
+      )
+    }
+
     if (!isCrawling) {
       // État: Pas de crawl en cours
       return (
