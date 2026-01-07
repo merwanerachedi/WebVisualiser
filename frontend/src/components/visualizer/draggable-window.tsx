@@ -57,11 +57,26 @@ export function DraggableWindow({
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
-      if (isDragging) {
-        setPosition({
-          x: e.clientX - dragOffset.x,
-          y: e.clientY - dragOffset.y,
-        })
+      if (isDragging && windowRef.current) {
+        const windowHeight = windowRef.current.offsetHeight
+        const minVisibleWidth = 100 // At least 100px of title bar visible horizontally
+        const titleBarHeight = 40 // Approximate title bar height
+
+        // Calculate bounds
+        const minX = -width + minVisibleWidth // Can go left, but 100px stays visible
+        const maxX = window.innerWidth - minVisibleWidth // Can go right, but 100px stays visible
+        const minY = 0 // Can't go above viewport
+        const maxY = window.innerHeight - titleBarHeight // Title bar always accessible
+
+        // Calculate new position
+        let newX = e.clientX - dragOffset.x
+        let newY = e.clientY - dragOffset.y
+
+        // Clamp to bounds
+        newX = Math.max(minX, Math.min(maxX, newX))
+        newY = Math.max(minY, Math.min(maxY, newY))
+
+        setPosition({ x: newX, y: newY })
       }
     }
 
@@ -78,7 +93,7 @@ export function DraggableWindow({
       document.removeEventListener("mousemove", handleMouseMove)
       document.removeEventListener("mouseup", handleMouseUp)
     }
-  }, [isDragging, dragOffset])
+  }, [isDragging, dragOffset, width])
 
   return (
     <div
