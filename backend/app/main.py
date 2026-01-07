@@ -175,6 +175,17 @@ async def get_crawl_graph(crawl_id: str):
     return graph
 
 
+@app.get("/api/crawl/{crawl_id}/stats")
+async def get_crawl_stats(crawl_id: str):
+    """Get accurate stats for a crawl from the database."""
+    try:
+        stats = await db.get_crawl_stats(crawl_id)
+        return stats
+    except Exception as e:
+        logger.error(f"Error fetching crawl stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
 @app.get("/api/search")
 async def search_pages(q: str):
     if not q:

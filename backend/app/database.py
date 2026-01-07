@@ -399,19 +399,62 @@ class Neo4jDatabase:
             )
 
     async def finalize_crawl(self, crawl_id, pages_crawled, links_found):
-        # (Garde ton code précédent ici)
+        """
+        Finalize crawl and store accurate stats:
+        - pages_crawled: pages with status_code > 0 AND != 301 (exclude redirects)
+        - pages_discovered: crawled pages + pages they link to (total unique)
+        - links_found: total unique LINKS_TO relationships
+        """
         async with self.driver.session() as session:
-            stats = await session.run(
-                "MATCH (p:Page) RETURN sum(CASE WHEN p.status_code > 0 THEN 1 ELSE 0 END) as real_pages, sum(CASE WHEN p.status_code = 0 THEN 1 ELSE 0 END) as discovered"
-            )
-            record = await stats.single()
-            await session.run(
-                "MATCH (c:Crawl {crawl_id: $crawl_id}) SET c.completed_at = datetime(), c.status = 'completed', c.pages_crawled = $pc, c.pages_discovered = $pd, c.links_found = $lf",
-                crawl_id=crawl_id,
-                pc=record["real_pages"],
-                pd=record["discovered"],
-                lf=links_found,
-            )
+            # Calculate accurate stats using the same logic as get_crawl_stats
+            stats_query = """
+                // First get crawled count (excluding redirects)
+                MATCH (c:Crawl {crawl_id: $crawl_id})-[cr:CRAWLED]->(p:Page)
+                WITH c,
+                     sum(CASE WHEN cr.status_code > 0 AND cr.status_code <> 301 THEN 1 ELSE 0 END) as crawled_count
+
+                // Count all unique discovered pages: crawled pages + pages they link to
+                OPTIONAL MATCH (c)-[:CRAWLED]->(crawled_page:Page)
+                OPTIONAL MATCH (c)-[:CRAWLED]->(s:Page)-[:LINKS_TO]->(linked_page:Page)
+                WITH c, crawled_count,
+                     collect(DISTINCT crawled_page) + collect(DISTINCT linked_page) as all_pages
+                UNWIND all_pages as page
+                WITH c, crawled_count, count(DISTINCT page) as total_discovered
+
+                // Count total links from crawled pages
+                OPTIONAL MATCH (c)-[:CRAWLED]->(s:Page)-[l:LINKS_TO]->(t:Page)
+                WITH c, total_discovered, crawled_count, count(DISTINCT l) as links
+
+                // Update the Crawl node with accurate stats
+                SET c.completed_at = datetime(),
+                    c.status = 'completed',
+                    c.pages_crawled = crawled_count,
+                    c.pages_discovered = total_discovered,
+                    c.links_found = links
+            """
+            await session.run(stats_query, crawl_id=crawl_id)
+
+    async def get_crawl_stats(self, crawl_id: str):
+        """
+        Get stats for a crawl from the Crawl node (stored by finalize_crawl).
+        """
+        async with self.driver.session() as session:
+            query = """
+                MATCH (c:Crawl {crawl_id: $crawl_id})
+                RETURN c.pages_discovered as discovered,
+                       c.pages_crawled as crawled,
+                       c.links_found as links
+            """
+            result = await session.run(query, crawl_id=crawl_id)
+            record = await result.single()
+
+            if record:
+                return {
+                    "discovered": record["discovered"] or 0,
+                    "crawled": record["crawled"] or 0,
+                    "links": record["links"] or 0,
+                }
+            return {"discovered": 0, "crawled": 0, "links": 0}
 
     # ========== EMBEDDING METHODS ==========
 

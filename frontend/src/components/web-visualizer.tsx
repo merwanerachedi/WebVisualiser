@@ -68,6 +68,7 @@ export default function WebVisualizer() {
   const [importanceFilter, setImportanceFilter] = useState(0) // 0-100%
   const [isLoadingAnalytics, setIsLoadingAnalytics] = useState(false)
   const [currentCrawlId, setCurrentCrawlId] = useState<string | null>(null)
+  const [backendStats, setBackendStats] = useState<{ discovered: number; crawled: number; links: number } | null>(null)
 
   const wsRef = useRef<WebSocket | null>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -124,6 +125,19 @@ export default function WebVisualizer() {
         setLinks(loadedLinks)
         setCrawlCompleted(true)
         setCurrentCrawlId(crawlId) // Store for analytics
+
+        // Fetch accurate stats from backend
+        try {
+          const statsResponse = await fetch(`${API_URL}/api/crawl/${crawlId}/stats`, {
+            credentials: "include",
+          })
+          if (statsResponse.ok) {
+            const statsData = await statsResponse.json()
+            setBackendStats(statsData)
+          }
+        } catch {
+          console.error("Failed to fetch stats from backend")
+        }
 
         try {
           const statusResponse = await fetch(`${API_URL}/api/crawl/${crawlId}/embedding-status`, {
@@ -286,6 +300,7 @@ export default function WebVisualizer() {
     setEmbeddingsReady(false) // Reset embeddings status
     setSearchScores({})
     setRateLimitError(null)
+    setBackendStats(null) // Reset backend stats for new crawl
 
     try {
       // Utiliser optionalAuthApi pour tenter un refresh silencieux du token
@@ -415,6 +430,12 @@ export default function WebVisualizer() {
             setIsStopping(false)
             // Ne PAS fermer le WebSocket - on attend embedding_completed
             if (fgRef.current) fgRef.current.zoomToFit(1000, 50)
+
+            // Fetch final accurate stats from backend
+            fetch(`${API_URL}/api/crawl/${crawlId}/stats`, { credentials: "include" })
+              .then((res) => res.json())
+              .then((statsData) => setBackendStats(statsData))
+              .catch(() => console.error("Failed to fetch final stats"))
           } else if (message.type === "embedding_completed") {
             // Embeddings terminés - on peut maintenant utiliser search/similar
             setEmbeddingsReady(true)
@@ -508,6 +529,7 @@ export default function WebVisualizer() {
     setEmbeddingsReady(false)
     setClickedNode(null)
     setSelectedNode(null)
+    setBackendStats(null) // Reset backend stats
   }, [handleStopCrawl])
 
   useEffect(() => {
@@ -522,19 +544,12 @@ export default function WebVisualizer() {
     }
   }, [])
 
-  // Calculate total discovered nodes from all links
-  const allDiscoveredUrls = new Set<string>()
-  allLinksRef.current.bySource.forEach((_, source) => allDiscoveredUrls.add(source))
-  allLinksRef.current.byTarget.forEach((_, target) => allDiscoveredUrls.add(target))
-
-  // Count total links from indexed storage
-  let totalLinks = 0
-  allLinksRef.current.bySource.forEach((links) => totalLinks += links.length)
-
-  const stats = {
-    discovered: Math.max(allDiscoveredUrls.size, nodes.length), // Use max to handle both live crawl and history load
+  // Use backend stats when available (after crawl completes or loading from history)
+  // Fall back to local calculation during live crawl
+  const stats = backendStats || {
+    discovered: nodes.length,
     crawled: nodes.filter((n) => n.status === "crawled").length,
-    links: Math.max(totalLinks, links.length), // Use max to handle both live crawl and history load
+    links: links.length,
   }
 
   const getSliderThumbColor = (value: number) => {
