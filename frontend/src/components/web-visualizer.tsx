@@ -12,6 +12,7 @@ import { SettingsPanel } from "./visualizer/settings-panel"
 import { StatsPanel } from "./visualizer/stats-panel"
 import { GraphCanvas } from "./visualizer/graph-canvas"
 import { DraggableWindow } from "./visualizer/draggable-window"
+import { WindowManagerProvider } from "./visualizer/window-manager-context"
 import { NodeDetailsWindow } from "./visualizer/node-details-window"
 import type { Node, Link, WebSocketMessage, CrawlConfig, SearchResult } from "./visualizer/types"
 
@@ -569,182 +570,184 @@ export default function WebVisualizer() {
   }
 
   return (
-    <div className="relative h-screen w-full bg-black overflow-hidden">
-      <Starfield />
+    <WindowManagerProvider>
+      <div className="relative h-screen w-full bg-black overflow-hidden">
+        <Starfield />
 
-      {/* Rate Limit Error Toast */}
-      {rateLimitError && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-top-4 duration-300">
-          <div className="px-6 py-4 rounded-2xl bg-gradient-to-r from-red-500/20 to-orange-500/20 border border-red-500/30 backdrop-blur-xl shadow-2xl shadow-red-500/20">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center">
-                <span className="text-xl">⏳</span>
-              </div>
-              <div>
-                <p className="text-white font-semibold">Slow down, explorer!</p>
-                <p className="text-white/70 text-sm">{rateLimitError}</p>
+        {/* Rate Limit Error Toast */}
+        {rateLimitError && (
+          <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-top-4 duration-300">
+            <div className="px-6 py-4 rounded-2xl bg-gradient-to-r from-red-500/20 to-orange-500/20 border border-red-500/30 backdrop-blur-xl shadow-2xl shadow-red-500/20">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-red-500 to-orange-500 flex items-center justify-center">
+                  <span className="text-xl">⏳</span>
+                </div>
+                <div>
+                  <p className="text-white font-semibold">Slow down, explorer!</p>
+                  <p className="text-white/70 text-sm">{rateLimitError}</p>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      <GraphCanvas
-        nodes={nodes}
-        links={links}
-        searchScores={searchScores}
-        seedUrl={url}
-        fgRef={fgRef}
-        onNodeHover={handleNodeHover}
-        onNodeClick={handleNodeClick}
-        hoverNode={hoverNode}
-        highlightNodes={highlightNodes}
-        highlightLinks={highlightLinks}
-        clickedNode={clickedNode}
-        similarNodes={similarNodes}
-        hoveredSimilarUrl={hoveredSimilarUrl}
-        analyticsMode={analyticsMode}
-        pageRankScores={pageRankScores}
-        maxPageRank={maxPageRank}
-        importanceFilter={importanceFilter}
-      />
+        <GraphCanvas
+          nodes={nodes}
+          links={links}
+          searchScores={searchScores}
+          seedUrl={url}
+          fgRef={fgRef}
+          onNodeHover={handleNodeHover}
+          onNodeClick={handleNodeClick}
+          hoverNode={hoverNode}
+          highlightNodes={highlightNodes}
+          highlightLinks={highlightLinks}
+          clickedNode={clickedNode}
+          similarNodes={similarNodes}
+          hoveredSimilarUrl={hoveredSimilarUrl}
+          analyticsMode={analyticsMode}
+          pageRankScores={pageRankScores}
+          maxPageRank={maxPageRank}
+          importanceFilter={importanceFilter}
+        />
 
-      {selectedNode && (
-        <DraggableWindow
-          title="Page Details"
-          defaultPosition={{ x: window.innerWidth - 500, y: window.innerHeight / 2 }}
-          width={450}
-          onClose={() => {
-            setClickedNode(null)
-            setSelectedNode(null)
-            setSimilarNodes(new Set()) // Reset graph when closing window
-          }}
-        >
-          <NodeDetailsWindow
-            nodeUrl={selectedNode.url}
-            nodeTitle={selectedNode.title}
-            crawlId={currentCrawlId || crawlIdFromUrl}
-            embeddingsReady={embeddingsReady}
+        {selectedNode && (
+          <DraggableWindow
+            id="page-details"
+            title="Page Details"
+            defaultPosition={{ x: window.innerWidth - 500, y: window.innerHeight / 2 }}
+            width={450}
             onClose={() => {
               setClickedNode(null)
               setSelectedNode(null)
-              setSimilarNodes(new Set())
-              setHoveredSimilarUrl(null)
+              setSimilarNodes(new Set()) // Reset graph when closing window
             }}
-            onSimilarPagesFound={handleSimilarPagesFound}
-            onHoverSimilarPage={(url) => setHoveredSimilarUrl(url ? normalizeUrl(url) : null)}
+          >
+            <NodeDetailsWindow
+              nodeUrl={selectedNode.url}
+              nodeTitle={selectedNode.title}
+              crawlId={currentCrawlId || crawlIdFromUrl}
+              embeddingsReady={embeddingsReady}
+              onClose={() => {
+                setClickedNode(null)
+                setSelectedNode(null)
+                setSimilarNodes(new Set())
+                setHoveredSimilarUrl(null)
+              }}
+              onSimilarPagesFound={handleSimilarPagesFound}
+              onHoverSimilarPage={(url) => setHoveredSimilarUrl(url ? normalizeUrl(url) : null)}
+            />
+          </DraggableWindow>
+        )}
+
+        <DraggableWindow id="controls" title="Controls" defaultPosition={{ x: 50, y: 90 }} width={500}>
+          <CrawlControls
+            url={url}
+            setUrl={setUrl}
+            isCrawling={isCrawling}
+            isConnected={isConnected}
+            isStopping={isStopping}
+            isAnalyzing={crawlCompleted && !embeddingsReady}
+            onStartCrawl={handleStartCrawl}
+            onStopCrawl={handleStopCrawl}
+            onReset={handleReset}
+            showSettings={showSettings}
+            setShowSettings={setShowSettings}
           />
-        </DraggableWindow>
-      )}
 
-      <DraggableWindow title="Controls" defaultPosition={{ x: 50, y: 90 }} width={500}>
-        <CrawlControls
-          url={url}
-          setUrl={setUrl}
-          isCrawling={isCrawling}
-          isConnected={isConnected}
-          isStopping={isStopping}
-          isAnalyzing={crawlCompleted && !embeddingsReady}
-          onStartCrawl={handleStartCrawl}
-          onStopCrawl={handleStopCrawl}
-          onReset={handleReset}
-          showSettings={showSettings}
-          setShowSettings={setShowSettings}
-        />
-
-        {/* Analytics Mode Controls - visible when graph has nodes */}
-        {nodes.length > 0 && !isCrawling && (
-          <div className="mt-4 pt-4 border-t border-white/10 space-y-3">
-            <button
-              onClick={handleAnalytics}
-              disabled={isLoadingAnalytics}
-              className={`
+          {/* Analytics Mode Controls - visible when graph has nodes */}
+          {nodes.length > 0 && !isCrawling && (
+            <div className="mt-4 pt-4 border-t border-white/10 space-y-3">
+              <button
+                onClick={handleAnalytics}
+                disabled={isLoadingAnalytics}
+                className={`
                 w-full group relative overflow-hidden rounded-xl transition-all duration-300
                 ${analyticsMode
-                  ? "bg-gradient-to-r from-cyan-500/20 via-purple-500/20 to-pink-500/20 border-2 border-cyan-400/50 shadow-[0_0_30px_rgba(6,182,212,0.4)]"
-                  : "bg-white/5 hover:bg-white/10 border-2 border-white/10 hover:border-white/20"
-                }
+                    ? "bg-gradient-to-r from-cyan-500/20 via-purple-500/20 to-pink-500/20 border-2 border-cyan-400/50 shadow-[0_0_30px_rgba(6,182,212,0.4)]"
+                    : "bg-white/5 hover:bg-white/10 border-2 border-white/10 hover:border-white/20"
+                  }
               `}
-            >
-              {/* Background shimmer effect when active */}
-              {analyticsMode && (
-                <div className="absolute inset-0 opacity-30">
-                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-[shimmer_2s_infinite]" />
-                </div>
-              )}
+              >
+                {/* Background shimmer effect when active */}
+                {analyticsMode && (
+                  <div className="absolute inset-0 opacity-30">
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-[shimmer_2s_infinite]" />
+                  </div>
+                )}
 
-              <div className="relative flex items-center justify-between px-4 py-3">
-                <div className="flex items-center gap-3">
-                  {/* Custom analytics icon */}
-                  <div
-                    className={`
+                <div className="relative flex items-center justify-between px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    {/* Custom analytics icon */}
+                    <div
+                      className={`
                     flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-300
                     ${analyticsMode ? "bg-gradient-to-br from-cyan-500 to-purple-500" : "bg-white/10"}
                   `}
-                  >
-                    <svg
-                      className={`w-5 h-5 transition-colors ${analyticsMode ? "text-white" : "text-white/60"}`}
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
                     >
-                      <path d="M3 3v18h18" />
-                      <path d="m19 9-5 5-4-4-3 3" />
-                      <circle cx="19" cy="9" r="1.5" fill="currentColor" />
-                    </svg>
-                  </div>
-
-                  <div className="text-left">
-                    <div className={`font-semibold ${analyticsMode ? "text-cyan-300" : "text-white/90"}`}>
-                      Analytics
+                      <svg
+                        className={`w-5 h-5 transition-colors ${analyticsMode ? "text-white" : "text-white/60"}`}
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M3 3v18h18" />
+                        <path d="m19 9-5 5-4-4-3 3" />
+                        <circle cx="19" cy="9" r="1.5" fill="currentColor" />
+                      </svg>
                     </div>
-                    <div className="text-xs text-white/50">PageRank visualization</div>
-                  </div>
-                </div>
 
-                {/* Toggle switch */}
-                <div
-                  className={`
+                    <div className="text-left">
+                      <div className={`font-semibold ${analyticsMode ? "text-cyan-300" : "text-white/90"}`}>
+                        Analytics
+                      </div>
+                      <div className="text-xs text-white/50">PageRank visualization</div>
+                    </div>
+                  </div>
+
+                  {/* Toggle switch */}
+                  <div
+                    className={`
                   relative w-12 h-6 rounded-full transition-all duration-300
                   ${analyticsMode ? "bg-gradient-to-r from-cyan-500 to-purple-500" : "bg-white/20"}
                 `}
-                >
-                  <div
-                    className={`
+                  >
+                    <div
+                      className={`
                     absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-all duration-300 shadow-lg
                     ${analyticsMode ? "translate-x-6" : "translate-x-0"}
                   `}
-                  />
+                    />
+                  </div>
                 </div>
-              </div>
-            </button>
+              </button>
 
-            {/* Importance Filter - only visible when analytics is ON */}
-            {analyticsMode && (
-              <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-300">
-                <div className="flex justify-between text-xs text-white/60">
-                  <span>Importance Filter</span>
-                  <span>{importanceFilter}%</span>
-                </div>
-                <div className="relative">
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={importanceFilter}
-                    onChange={(e) => setImportanceFilter(Number(e.target.value))}
-                    className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow-lg [&::-webkit-slider-thumb]:transition-all [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:cursor-pointer [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:shadow-lg [&::-moz-range-thumb]:transition-all"
-                    style={
-                      {
-                        //CSS custom properties for dynamic colors
-                        "--thumb-color": getSliderThumbColor(importanceFilter),
-                      } as React.CSSProperties
-                    }
-                  />
-                  <style jsx>{`
+              {/* Importance Filter - only visible when analytics is ON */}
+              {analyticsMode && (
+                <div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                  <div className="flex justify-between text-xs text-white/60">
+                    <span>Importance Filter</span>
+                    <span>{importanceFilter}%</span>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={importanceFilter}
+                      onChange={(e) => setImportanceFilter(Number(e.target.value))}
+                      className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow-lg [&::-webkit-slider-thumb]:transition-all [&::-moz-range-thumb]:appearance-none [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:cursor-pointer [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:shadow-lg [&::-moz-range-thumb]:transition-all"
+                      style={
+                        {
+                          //CSS custom properties for dynamic colors
+                          "--thumb-color": getSliderThumbColor(importanceFilter),
+                        } as React.CSSProperties
+                      }
+                    />
+                    <style jsx>{`
                     input[type='range']::-webkit-slider-thumb {
                       background: var(--thumb-color);
                       box-shadow: 0 0 10px var(--thumb-color), 0 0 20px var(--thumb-color);
@@ -754,41 +757,43 @@ export default function WebVisualizer() {
                       box-shadow: 0 0 10px var(--thumb-color), 0 0 20px var(--thumb-color);
                     }
                   `}</style>
+                  </div>
+                  <div className="flex justify-between text-[10px] text-white/40">
+                    <span>Show all</span>
+                    <span>Top only</span>
+                  </div>
                 </div>
-                <div className="flex justify-between text-[10px] text-white/40">
-                  <span>Show all</span>
-                  <span>Top only</span>
-                </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          )}
+        </DraggableWindow>
+
+        {showSettings && (
+          <DraggableWindow
+            id="settings"
+            title="Settings"
+            defaultPosition={{ x: 50, y: 270 }}
+            width={400}
+            onClose={() => setShowSettings(false)}
+          >
+            <SettingsPanel config={config} setConfig={setConfig} />
+          </DraggableWindow>
         )}
-      </DraggableWindow>
 
-      {showSettings && (
-        <DraggableWindow
-          title="Settings"
-          defaultPosition={{ x: 50, y: 270 }}
-          width={400}
-          onClose={() => setShowSettings(false)}
-        >
-          <SettingsPanel config={config} setConfig={setConfig} />
-        </DraggableWindow>
-      )}
+        {embeddingsReady && (
+          <DraggableWindow id="search" title="Search" defaultPosition={{ x: 50, y: 440 }} width={500}>
+            <SearchPanel
+              searchQuery={searchQuery}
+              setSearchQuery={setSearchQuery}
+              isSearching={isSearching}
+              onSearch={handleSearch}
+              crawlCompleted={crawlCompleted}
+            />
+          </DraggableWindow>
+        )}
 
-      {embeddingsReady && (
-        <DraggableWindow title="Search" defaultPosition={{ x: 50, y: 440 }} width={500}>
-          <SearchPanel
-            searchQuery={searchQuery}
-            setSearchQuery={setSearchQuery}
-            isSearching={isSearching}
-            onSearch={handleSearch}
-            crawlCompleted={crawlCompleted}
-          />
-        </DraggableWindow>
-      )}
-
-      <StatsPanel stats={stats} isConnected={isConnected} />
-    </div>
+        <StatsPanel stats={stats} isConnected={isConnected} />
+      </div>
+    </WindowManagerProvider>
   )
 }
