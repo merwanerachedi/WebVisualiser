@@ -477,11 +477,13 @@ class WebCrawler:
         await self.db.batch_create_links(links_to_create)
         self.profiler.record("6c_db_batch_links", time.perf_counter() - t0)
 
-        # ⏱️ TIMING: WebSocket broadcasts (still sequential for real-time UX)
+        # ⏱️ TIMING: WebSocket batch broadcast (1 message with all links)
         t0 = time.perf_counter()
-        for msg in ws_messages:
-            await self._broadcast_throttled(msg)
-        self.profiler.record("6d_ws_broadcast_links", time.perf_counter() - t0)
+        if ws_messages:
+            # Extraire juste les données des liens pour le batch
+            links_data = [msg["data"] for msg in ws_messages]
+            await self._broadcast_throttled({"type": "links_batch", "data": {"links": links_data}})
+        self.profiler.record("6d_ws_broadcast_batch", time.perf_counter() - t0)
 
     async def _update_redirect_links(self):
         if not self.url_redirects:

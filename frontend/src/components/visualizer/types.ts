@@ -13,7 +13,7 @@ export interface Link {
 }
 
 export interface WebSocketMessage {
-  type: "link_created" | "page_discovered" | "crawl_completed" | "redirect_corrected" | "embedding_completed"
+  type: "link_created" | "links_batch" | "page_discovered" | "crawl_completed" | "redirect_corrected" | "embedding_completed"
   data: {
     source?: string
     target?: string
@@ -26,6 +26,7 @@ export interface WebSocketMessage {
     domain?: string
     path?: string
     crawl_id?: string
+    links?: Array<{ source: string; target: string; anchor: string }>
   }
 }
 

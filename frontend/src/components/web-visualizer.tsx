@@ -425,6 +425,60 @@ export default function WebVisualizer() {
               }
               return currentNodes
             })
+          } else if (message.type === "links_batch") {
+            // Handle batch of links from a single page
+            const linksData = message.data.links || []
+
+            const bySource = allLinksRef.current.bySource
+            const byTarget = allLinksRef.current.byTarget
+
+            // Process all links in batch
+            const newLinksToAdd: { source: string; target: string }[] = []
+
+            for (const linkInfo of linksData) {
+              const source = normalizeUrl(linkInfo.source)
+              const target = normalizeUrl(linkInfo.target)
+              if (!source || !target || source === target) continue
+
+              // Store link in indexed storage
+              const linkData = { source, target }
+              if (!bySource.has(source)) bySource.set(source, [])
+              if (!byTarget.has(target)) byTarget.set(target, [])
+
+              const existsInIndex = bySource.get(source)!.some(l => l.target === target)
+              if (!existsInIndex) {
+                bySource.get(source)!.push(linkData)
+                byTarget.get(target)!.push(linkData)
+              }
+            }
+
+            // Check which links to display (both nodes crawled)
+            setNodes((currentNodes) => {
+              const crawledIds = new Set(currentNodes.filter(n => n.status === "crawled").map(n => n.id))
+
+              for (const linkInfo of linksData) {
+                const source = normalizeUrl(linkInfo.source)
+                const target = normalizeUrl(linkInfo.target)
+                if (crawledIds.has(source) && crawledIds.has(target)) {
+                  newLinksToAdd.push({ source, target })
+                }
+              }
+
+              if (newLinksToAdd.length > 0) {
+                setLinks((prev) => {
+                  const existingLinks = new Set(prev.map(l => {
+                    const sId = typeof l.source === "object" ? (l.source as Node).id : l.source
+                    const tId = typeof l.target === "object" ? (l.target as Node).id : l.target
+                    return `${sId}->${tId}`
+                  }))
+
+                  const trulyNewLinks = newLinksToAdd.filter(l => !existingLinks.has(`${l.source}->${l.target}`))
+                  return [...prev, ...trulyNewLinks]
+                })
+              }
+
+              return currentNodes
+            })
           } else if (message.type === "crawl_completed") {
             setIsCrawling(false)
             setCrawlCompleted(true)
