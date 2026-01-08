@@ -349,6 +349,7 @@ export function NodeDetailsWindow({
                             <div
                                 key={page.url}
                                 className="flex items-start gap-2 text-xs p-2 rounded bg-cyan-500/10 hover:bg-cyan-500/20 transition-colors cursor-pointer"
+                                onClick={() => window.open(page.url, "_blank", "noopener,noreferrer")}
                                 onMouseEnter={() => onHoverSimilarPage?.(page.url)}
                                 onMouseLeave={() => onHoverSimilarPage?.(null)}
                             >
@@ -357,6 +358,7 @@ export function NodeDetailsWindow({
                                     <p className="text-white truncate">{page.title || "Untitled"}</p>
                                     <p className="text-slate-400 truncate text-[10px]">{page.url}</p>
                                 </div>
+                                <ExternalLink className="w-3 h-3 text-cyan-400/60 flex-shrink-0 mt-0.5" />
                             </div>
                         ))}
                     </div>
