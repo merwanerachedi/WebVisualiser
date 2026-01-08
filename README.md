@@ -151,7 +151,7 @@ docker-compose up --build
 
 ##  Future Improvements
 * [ ] **Hybrid Crawling Engine:** Evolve the crawler to handle **JavaScript-heavy websites** and bypass **Cloudflare protection** (using headless browsers).
-* [ ] **Smart Graph Deduplication:** Add a user option to display only unique discovery paths (e.g., if Page C is linked by A and B, show only one edge) to reduce visual clutter.
+* [x] **Smart Graph Deduplication:** Add a user option to display only unique discovery paths (e.g., if Page C is linked by A and B, show only one edge) to reduce visual clutter.
 * [ ] **Deep Testing Suite:** Implement extensive automated unit testing (Pytest/Jest).
 * [x] **Batch Processing:** Optimize crawling speed by batching embeddings and DB writes.
 * [ ] **RAG Integration:** Add a "Chat with your Graph" feature.
