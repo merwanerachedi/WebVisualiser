@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect, useRef, useCallback } from "react"
+import { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { useSearchParams } from "next/navigation"
 import { optionalAuthApi } from "@/lib/api"
 import { Starfield } from "./visualizer/starfield"
@@ -70,6 +70,25 @@ export default function WebVisualizer() {
   const [isLoadingAnalytics, setIsLoadingAnalytics] = useState(false)
   const [currentCrawlId, setCurrentCrawlId] = useState<string | null>(null)
   const [backendStats, setBackendStats] = useState<{ discovered: number; crawled: number; links: number } | null>(null)
+
+  // Tree View Mode State
+  const [treeViewMode, setTreeViewMode] = useState(false)
+
+  // Derived state: filtered links for tree view (only first incoming link per target)
+  const visualLinks = useMemo(() => {
+    if (!treeViewMode) return links
+
+    // Keep only the first incoming link for each target node
+    const seenTargets = new Set<string>()
+    return links.filter((link) => {
+      const targetId = typeof link.target === "object"
+        ? (link.target as Node).id
+        : link.target
+      if (seenTargets.has(targetId)) return false
+      seenTargets.add(targetId)
+      return true
+    })
+  }, [links, treeViewMode])
 
   const wsRef = useRef<WebSocket | null>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -173,7 +192,8 @@ export default function WebVisualizer() {
 
     if (node) {
       newHighlightNodes.add(node.id)
-      links.forEach((link) => {
+      // Use visualLinks to only highlight visible links (respects Tree View mode)
+      visualLinks.forEach((link) => {
         const sourceId = typeof link.source === "object" ? (link.source as Node).id : link.source
         const targetId = typeof link.target === "object" ? (link.target as Node).id : link.target
         if (sourceId === node.id || targetId === node.id) {
@@ -647,7 +667,7 @@ export default function WebVisualizer() {
 
         <GraphCanvas
           nodes={nodes}
-          links={links}
+          links={visualLinks}
           searchScores={searchScores}
           seedUrl={url}
           fgRef={fgRef}
@@ -709,9 +729,79 @@ export default function WebVisualizer() {
             setShowSettings={setShowSettings}
           />
 
-          {/* Analytics Mode Controls - visible when graph has nodes */}
+          {/* Analytics Mode Controls | Tree view Toggle - visible when graph has nodes */}
           {nodes.length > 0 && !isCrawling && (
             <div className="mt-4 pt-4 border-t border-white/10 space-y-3">
+              {/* Tree View Toggle */}
+              <button
+                onClick={() => setTreeViewMode(!treeViewMode)}
+                className={`
+                w-full group relative overflow-hidden rounded-xl transition-all duration-300
+                ${treeViewMode
+                    ? "bg-gradient-to-r from-emerald-500/20 via-teal-500/20 to-cyan-500/20 border-2 border-emerald-400/50 shadow-[0_0_30px_rgba(16,185,129,0.4)]"
+                    : "bg-white/5 hover:bg-white/10 border-2 border-white/10 hover:border-white/20"
+                  }
+              `}
+              >
+                {/* Background shimmer effect when active */}
+                {treeViewMode && (
+                  <div className="absolute inset-0 opacity-30">
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-[shimmer_2s_infinite]" />
+                  </div>
+                )}
+
+                <div className="relative flex items-center justify-between px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    {/* Tree icon */}
+                    <div
+                      className={`
+                    flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-300
+                    ${treeViewMode ? "bg-gradient-to-br from-emerald-500 to-teal-500" : "bg-white/10"}
+                  `}
+                    >
+                      <svg
+                        className={`w-5 h-5 transition-colors ${treeViewMode ? "text-white" : "text-white/60"}`}
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M12 3v18" />
+                        <path d="M5 10h14" />
+                        <path d="M5 10V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v4" />
+                        <path d="M3 18h6" />
+                        <path d="M15 18h6" />
+                        <circle cx="12" cy="12" r="1.5" fill="currentColor" />
+                      </svg>
+                    </div>
+
+                    <div className="text-left">
+                      <div className={`font-semibold ${treeViewMode ? "text-emerald-300" : "text-white/90"}`}>
+                        Tree View
+                      </div>
+                      <div className="text-xs text-white/50">Simplify graph structure</div>
+                    </div>
+                  </div>
+
+                  {/* Toggle switch */}
+                  <div
+                    className={`
+                  relative w-12 h-6 rounded-full transition-all duration-300
+                  ${treeViewMode ? "bg-gradient-to-r from-emerald-500 to-teal-500" : "bg-white/20"}
+                `}
+                  >
+                    <div
+                      className={`
+                    absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-all duration-300 shadow-lg
+                    ${treeViewMode ? "translate-x-6" : "translate-x-0"}
+                  `}
+                    />
+                  </div>
+                </div>
+              </button>
+              {/* Analytics Mode Controls*/}
               <button
                 onClick={handleAnalytics}
                 disabled={isLoadingAnalytics}
