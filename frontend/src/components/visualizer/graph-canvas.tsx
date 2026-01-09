@@ -151,20 +151,26 @@ export function GraphCanvas({
           }
 
           // Determine if node should be dimmed
+          // Priority order: Similar Pages > Click > Hover > PageRank (no dimming)
           let isDimmed = false
-          if (analyticsMode) {
-            // In analytics mode, no dimming - use heatmap colors instead
-            isDimmed = false
-          } else if (hoveredSimilarUrl) {
-            // When hovering a result item, only highlight that specific node
+
+          // Priority 1: Similar pages - hovered result item (highest when in similar mode)
+          if (hoveredSimilarUrl) {
             isDimmed = node.id !== hoveredSimilarUrl
-          } else if (isSimilarModeActive) {
+          }
+          // Priority 2: Similar pages - general
+          else if (isSimilarModeActive) {
             isDimmed = !isSimilarNode
-          } else if (clickedNode) {
+          }
+          // Priority 3: Click
+          else if (clickedNode) {
             isDimmed = node.id !== clickedNode.id
-          } else if (hoverNode) {
+          }
+          // Priority 4: Hover
+          else if (hoverNode) {
             isDimmed = !highlightNodes.has(node.id)
           }
+          // No focus active - no dimming (PageRank/default colors show normally)
 
           const globalAlpha = isDimmed ? 0.1 : 1
 

@@ -59,14 +59,14 @@ export function DraggableWindow({
     const handleMouseMove = (e: MouseEvent) => {
       if (isDragging && windowRef.current) {
         const windowHeight = windowRef.current.offsetHeight
-        const minVisibleWidth = 100 // At least 100px of title bar visible horizontally
-        const titleBarHeight = 40 // Approximate title bar height
+        const minVisibleWidth = 100
+        const titleBarHeight = 40
 
         // Calculate bounds
-        const minX = -width + minVisibleWidth // Can go left, but 100px stays visible
-        const maxX = window.innerWidth - minVisibleWidth // Can go right, but 100px stays visible
-        const minY = 0 // Can't go above viewport
-        const maxY = window.innerHeight - titleBarHeight // Title bar always accessible
+        const minX = -width + minVisibleWidth
+        const maxX = window.innerWidth - minVisibleWidth
+        const minY = 0
+        const maxY = window.innerHeight - titleBarHeight
 
         // Calculate new position
         let newX = e.clientX - dragOffset.x
