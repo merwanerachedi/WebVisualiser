@@ -381,3 +381,12 @@ async def get_page_outlinks(
     except Exception as e:
         logger.error(f"Error fetching page outlinks: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+# ========== Health Routes ==========
+
+
+@app.get("/health")
+async def health_check():
+    """Check if the API is running."""
+    return {"status": "ok"}
